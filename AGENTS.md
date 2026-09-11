@@ -19,7 +19,7 @@ Repeat for each phase in `PLAN.md`, one phase at a time:
 ### 2. CHECK
 - Run, in this order, with 60–120s timer cut-off:
   - `go vet ./...`
-  - `go build -o /tmp/skillman .`
+  - `go build -o tmp/skillman .`
   - Phase-specific check from `PLAN.md` (render, resize, `NO_COLOR=1`, filter, delete→undo, `list --json`, etc.).
 - Fix failures before committing. Never commit broken builds.
 - For TUI visuals: test at 80×24 and narrow width, plus `TERM=dumb` and piped output.
@@ -41,8 +41,8 @@ Repeat for each phase in `PLAN.md`, one phase at a time:
 
 ## Termux notes
 - Prefix long commands with `timeout 120`. Use `workdir` instead of `cd`.
-- Go module cache lives under Termux prefix; `go build` output goes to `/tmp` (`/data/data/com.termux/files/usr/tmp`), never into the repo.
-- `.gitignore` covers: binaries (`skillman`, `/tmp`), `*.test`, coverage, `dist/`, IDE files.
+- Go module cache lives under Termux prefix; `go build` output goes to project-local `./tmp/` (gitignored), never `/tmp` (not writable here) and never into the repo root.
+- `.gitignore` covers: binaries (`skillman`, `tmp/`), `*.test`, coverage, `dist/`, IDE files.
 
 ## File map
 - `tui-philosophy.md` — TUI baseline (do not weaken: `q/?//`, resize, NO_COLOR, clean exit, async, config, `--help`, non-interactive).
