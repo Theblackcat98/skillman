@@ -97,7 +97,9 @@ func run(args []string) int {
 	}
 
 	m := NewModel(plain, noAnim)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	// Cap redraws: full-screen rewrites on a slow terminal can queue up
+	// behind spinner frames and delay keypresses.
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithFPS(20))
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "tui error: "+err.Error())
 		logf("tui error: %v", err)

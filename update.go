@@ -34,6 +34,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.errMsg = ""
 		m.skills = msg.skills
+		m.invalidatePreview()
 		m.applyFilter()
 		m.sizePanes()
 		return m, nil
@@ -72,7 +73,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, c)
 		}
 	}
-	if !m.noAnim {
+	// Spinner ticks only while loading. A never-ending tick loop would
+	// redraw the full screen 12x/sec even when idle, queueing up behind
+	// slow terminal redraws and delaying keypresses.
+	if m.loading && !m.noAnim {
 		var c tea.Cmd
 		m.spinner, c = m.spinner.Update(msg)
 		if c != nil {
@@ -226,8 +230,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "v":
 		return m, m.doValidate()
 	case "r":
-		m.loading = true
-		return m, loadSkillsCmd()
+		return m, m.rescanCmd()
 	case "esc":
 		if m.query != "" {
 			m.query = ""
@@ -362,8 +365,7 @@ func (m *Model) runCommand(cmd string) tea.Cmd {
 		}
 		return tea.Quit
 	case "reload", "r":
-		m.loading = true
-		return loadSkillsCmd()
+		return m.rescanCmd()
 	case "validate", "v":
 		return m.doValidate()
 	case "edit", "e":

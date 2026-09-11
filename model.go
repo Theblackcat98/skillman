@@ -1,12 +1,14 @@
 package main
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 )
 
 type mode int
@@ -38,6 +40,16 @@ func loadSkillsCmd() tea.Cmd {
 		skills, err := ScanSkills(skillsDir())
 		return skillsLoadedMsg{skills: skills, err: err}
 	}
+}
+
+// rescanCmd reloads skills and restarts the spinner tick (the tick chain
+// stops when idle, so it must be re-armed for each new scan).
+func (m *Model) rescanCmd() tea.Cmd {
+	m.loading = true
+	if m.noAnim {
+		return loadSkillsCmd()
+	}
+	return tea.Batch(loadSkillsCmd(), m.spinner.Tick)
 }
 
 func toastCmd(text string, isErr bool) tea.Cmd {
@@ -76,6 +88,13 @@ type Model struct {
 	confirmIdx int
 
 	undo pendingUndo
+
+	// Preview render cache: key is skill name + wrap width. Rebuilding a
+	// glamour renderer and re-rendering markdown on every keypress was the
+	// main source of j/k lag, so renders are cached and the renderer reused.
+	previewCache  map[string]string
+	previewCacheW int
+	glam          *glamour.TermRenderer
 }
 
 func NewModel(plain, noAnim bool) Model {
@@ -100,6 +119,7 @@ func NewModel(plain, noAnim bool) Model {
 		loading: true,
 		preview: vp, filter: ti, cmdline: ci, spinner: sp,
 		width: 80, height: 24,
+		previewCache: map[string]string{},
 	}
 }
 
@@ -136,10 +156,50 @@ func (m *Model) refreshPreview() {
 		m.preview.SetContent("(no skills match — press / to filter, r to rescan)")
 		return
 	}
-	header := sel.Name + "\n" + sel.Desc + "\n\n"
-	body := sel.RenderPreview(w, m.plain)
-	m.preview.SetContent(header + body)
+	m.preview.SetContent(m.cachedPreview(*sel, w))
 	m.preview.GotoTop()
+}
+
+// invalidatePreview drops cached renders. Called on every rescan so edits,
+// deletes, and undos never show stale content.
+func (m *Model) invalidatePreview() {
+	m.previewCache = map[string]string{}
+}
+
+// cachedPreview returns the cached render for a skill, rendering once on
+// first visit. This keeps cursor movement at cache-lookup cost.
+func (m *Model) cachedPreview(s Skill, w int) string {
+	key := s.Name + "\x00" + strconv.Itoa(w)
+	if text, ok := m.previewCache[key]; ok {
+		return text
+	}
+	header := s.Name + "\n" + s.Desc + "\n\n"
+	text := header + s.renderPreviewWith(m.sharedRenderer(w), m.plain)
+	if m.previewCache == nil {
+		m.previewCache = map[string]string{}
+	}
+	m.previewCache[key] = text
+	return text
+}
+
+// sharedRenderer reuses one glamour renderer until the wrap width changes.
+func (m *Model) sharedRenderer(w int) *glamour.TermRenderer {
+	if m.plain {
+		return nil
+	}
+	if m.glam == nil || m.previewCacheW != w {
+		r, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(w),
+		)
+		if err != nil {
+			return nil
+		}
+		m.glam = r
+		m.previewCacheW = w
+		m.previewCache = map[string]string{}
+	}
+	return m.glam
 }
 
 func (m *Model) previewWidth() int {

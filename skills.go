@@ -169,24 +169,34 @@ func (s Skill) Badge() (string, string) {
 }
 
 // RenderPreview returns glamour-rendered markdown, or raw fallback.
+// One-shot helper for CLI use; the TUI uses renderPreviewWith + a cache.
 func (s Skill) RenderPreview(width int, plain bool) string {
 	if width < 20 {
 		width = 20
 	}
-	if s.Body == "" {
-		if len(s.Issues) > 0 {
-			return "Issues:\n- " + strings.Join(s.Issues, "\n- ") + "\n"
-		}
-		return "(empty SKILL.md)"
-	}
 	if plain {
-		return s.Body
+		return s.renderPreviewWith(nil, true)
 	}
 	r, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {
+		return s.renderPreviewWith(nil, true)
+	}
+	return s.renderPreviewWith(r, false)
+}
+
+// renderPreviewWith renders with a caller-supplied shared glamour renderer
+// (fast path for the TUI). Falls back to raw text when plain or r is nil.
+func (s Skill) renderPreviewWith(r *glamour.TermRenderer, plain bool) string {
+	if s.Body == "" {
+		if len(s.Issues) > 0 {
+			return "Issues:\n- " + strings.Join(s.Issues, "\n- ") + "\n"
+		}
+		return "(empty SKILL.md)"
+	}
+	if plain || r == nil {
 		return s.Body
 	}
 	out, err := r.Render(s.Body)
