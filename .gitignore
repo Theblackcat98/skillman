@@ -1,0 +1,31 @@
+# Binaries and build output
+skillman
+/tmp/
+*.test
+*.out
+coverage.out
+coverage.html
+dist/
+
+# Go cache and tooling
+vendor/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# SkillMan runtime (trash, logs, temp clones)
+.trash/
+tmp/
+*.log
+
+# Secrets
+.env
+.env.local
