@@ -784,3 +784,54 @@ func TestToastAndUndoDoNotRaceTheModel(t *testing.T) {
 		t.Fatal("toast handling blocked; a timer is being waited on inline")
 	}
 }
+
+// e on a skill with no SKILL.md used to open a directory listing, so
+// saving could not create the file and nothing said why (review E10).
+func TestEditAsksBeforeCreatingSkillMD(t *testing.T) {
+	isolatedEnv(t)
+	m := newTestModel(t, 80, 24, true)
+	m.skills = fixtureSkills(t, 2)
+	m.applyFilter()
+	// Remove the file behind the selected skill.
+	sel := m.selected()
+	if err := os.Remove(filepath.Join(sel.Dir, "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	// The model still thinks the file is fine; the filesystem is the
+	// authority, and the check happens on the edit path.
+	send(t, &m, keyPress('e'))
+	if m.appMode != modeConfirmCreate {
+		t.Fatalf("e on a skill with no SKILL.md put the model in mode %d, want the create confirmation", m.appMode)
+	}
+	view := m.View()
+	if !strings.Contains(view, "no SKILL.md") || !strings.Contains(view, "Create one") {
+		t.Errorf("the create modal does not say what it will do:\n%s", view)
+	}
+
+	// n creates nothing.
+	send(t, &m, keyPress('n'))
+	if m.appMode != modeNormal {
+		t.Errorf("n left mode %d", m.appMode)
+	}
+	if _, err := os.Stat(filepath.Join(sel.Dir, "SKILL.md")); err == nil {
+		t.Error("n created SKILL.md anyway")
+	}
+}
+
+func TestEditOnExistingFileGoesStraightToTheEditor(t *testing.T) {
+	isolatedEnv(t)
+	m := newTestModel(t, 80, 24, true)
+	m.skills = fixtureSkills(t, 1)
+	m.applyFilter()
+	// A no-op editor, so ExecProcess returns immediately.
+	t.Setenv("EDITOR", "true")
+	t.Setenv("VISUAL", "")
+	mm, cmd := m.Update(keyPress('e'))
+	m = mm.(Model)
+	if m.appMode == modeConfirmCreate {
+		t.Error("e on a skill that has SKILL.md asked to create one")
+	}
+	if cmd == nil {
+		t.Fatal("e on an existing file produced no command")
+	}
+}

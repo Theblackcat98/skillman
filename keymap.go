@@ -69,6 +69,7 @@ var envVarDoc = []struct{ Name, Effect string }{
 	{"VISUAL", "editor to open SKILL.md with, before EDITOR"},
 	{"EDITOR", "editor to open SKILL.md with"},
 	{"NO_COLOR", "set: no colour, anywhere"},
+	{"SKILLMAN_COLOR", "always: colour even when piped"},
 	{"TERM", "dumb: no colour and no animation"},
 	{"NO_ANIMATIONS", "set: no spinner, no transitions"},
 	{"REDUCED_MOTION", "set: no spinner, no transitions"},

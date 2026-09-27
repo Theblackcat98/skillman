@@ -30,7 +30,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.errMsg = msg.err.Error()
 			logf("scan error: %v", msg.err)
-			return m, m.setToast("scan failed — see log", true)
+			cmd := m.setToast("scan failed — see log", true)
+			return m, cmd
 		}
 		m.errMsg = ""
 		m.skills = msg.skills
@@ -40,7 +41,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case toastMsg:
-		return m, m.setToast(msg.text, msg.isErr)
+		cmd := m.setToast(msg.text, msg.isErr)
+		return m, cmd
 
 	case toastClearMsg:
 		// Ignore clears scheduled by an older toast (B6).
@@ -109,6 +111,11 @@ func (m *Model) sizePanes() {
 	m.preview.Height = contentH(h)
 }
 
+// The command is always bound to a local before the model is returned.
+// `return m, m.doDelete()` works on gc because a call is evaluated
+// before the surrounding operands are copied, but the Go spec does not
+// order non-call operands against calls, so it is a latent trap rather
+// than correct code (review F2).
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
@@ -126,11 +133,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Confirm delete modal: y confirms, n/Esc cancels.
-	if m.appMode == modeConfirm {
+	// Confirm modals: y confirms, n/Esc cancels. Each one gates a
+	// different action, so they stay separate modes rather than sharing
+	// a flag.
+	switch m.appMode {
+	case modeConfirm:
 		switch key {
 		case "y", "Y", "enter":
-			return m, m.doDelete()
+			cmd := m.doDelete()
+			return m, cmd
+		case "n", "N", "esc":
+			m.appMode = modeNormal
+			return m, nil
+		}
+		return m, nil
+	case modeConfirmCreate:
+		switch key {
+		case "y", "Y", "enter":
+			cmd := m.doCreateAndEdit()
+			return m, cmd
 		case "n", "N", "esc":
 			m.appMode = modeNormal
 			return m, nil
@@ -166,11 +187,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cmdline.SetValue("")
 			return m, nil
 		case "enter":
-			cmd := strings.TrimSpace(m.cmdline.Value())
+			typed := strings.TrimSpace(m.cmdline.Value())
 			m.cmdline.SetValue("")
 			m.cmdline.Blur()
 			m.appMode = modeNormal
-			return m, m.runCommand(cmd)
+			cmd := m.runCommand(typed)
+			return m, cmd
 		}
 		var c tea.Cmd
 		m.cmdline, c = m.cmdline.Update(msg)
@@ -244,7 +266,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusPreview = !m.focusPreview
 		return m, nil
 	case "e":
-		return m, m.doEdit()
+		cmd := m.doEdit()
+		return m, cmd
 	case "d", "delete":
 		if m.selected() == nil {
 			return m, toastCmd("nothing to delete", true)
@@ -252,11 +275,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.appMode = modeConfirm
 		return m, nil
 	case "u":
-		return m, m.doUndo()
+		cmd := m.doUndo()
+		return m, cmd
 	case "v":
-		return m, m.doValidate()
+		cmd := m.doValidate()
+		return m, cmd
 	case "r":
-		return m, m.rescanCmd()
+		cmd := m.rescanCmd()
+		return m, cmd
 	case "esc":
 		if m.query != "" {
 			m.query = ""
@@ -298,7 +324,14 @@ func (m *Model) doEdit() tea.Cmd {
 	if sel == nil {
 		return toastCmd("nothing to edit", true)
 	}
-	path := skillEditPath(*sel)
+	// A skill with no SKILL.md is a real state (a half-unzipped archive,
+	// a directory the user made by hand), and `e` on it used to open a
+	// file listing. Ask before creating a file the user did not ask for.
+	path, exists := skillEditPath(*sel)
+	if !exists {
+		m.appMode = modeConfirmCreate
+		return nil
+	}
 	name := sel.Name
 	// ExecProcess suspends the alt screen around the editor and
 	// restores it afterwards (audit B10); $EDITOR flags are split
@@ -319,6 +352,49 @@ func (m *Model) doEdit() tea.Cmd {
 	})
 }
 
+// doCreateAndEdit writes the starter SKILL.md, then opens the editor on
+// it. Split from doEdit so the confirmation modal stays a pure gate.
+func (m *Model) doCreateAndEdit() tea.Cmd {
+	sel := m.selected()
+	if sel == nil {
+		m.appMode = modeNormal
+		return nil
+	}
+	name := sel.Name
+	path, created, err := ensureSkillMD(*sel)
+	if err != nil {
+		m.appMode = modeNormal
+		logf("create SKILL.md: %v", err)
+		return toastCmd("could not create SKILL.md: "+err.Error(), true)
+	}
+	if !created {
+		m.appMode = modeNormal
+		return m.doEdit()
+	}
+	m.appMode = modeNormal
+	sk := *sel
+	sk.Body = fmt.Sprintf(skillTemplate, name, name)
+	sk.Desc = "one line, say what this skill is for"
+	sk.Issues = nil
+	sk.Valid = true
+	cmds := []tea.Cmd{
+		toastCmd("created "+name+"/SKILL.md", false),
+		tea.ExecProcess(editorCmd(path), func(eerr error) tea.Msg {
+			if eerr != nil {
+				logf("editor error: %v", eerr)
+				return toastMsg{text: "editor failed: " + eerr.Error(), isErr: true}
+			}
+			skills, serr := ScanSkills(skillsDir())
+			if serr != nil {
+				logf("post-edit rescan error: %v", serr)
+				return toastMsg{text: "created " + name + " — rescan failed", isErr: true}
+			}
+			return skillsLoadedMsg{skills: skills}
+		}),
+	}
+	return tea.Batch(cmds...)
+}
+
 func (m *Model) doDelete() tea.Cmd {
 	sel := m.selected()
 	if sel == nil {
@@ -333,7 +409,7 @@ func (m *Model) doDelete() tea.Cmd {
 		return toastCmd("delete failed: "+err.Error(), true)
 	}
 	m.appMode = modeNormal
-	m.undo = pendingUndo{Name: name, TrashPath: dest, Active: true, ExpiresAt: time.Now().Add(30 * time.Second)}
+	m.undo = pendingUndo{Name: name, TrashPath: dest, Active: true}
 	// Rescan inline.
 	skills, _ := ScanSkills(skillsDir())
 	m.skills = skills

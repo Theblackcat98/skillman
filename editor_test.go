@@ -69,17 +69,75 @@ func TestSkillEditPathPrefersSkillMD(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := Skill{Name: "demo", Dir: filepath.Join(dir, "demo")}
-	// No SKILL.md yet: the directory is what is left, and the caller
-	// has to say so rather than opening a file listing.
-	if got := skillEditPath(s); got != s.Dir {
-		t.Errorf("skillEditPath with no SKILL.md = %q, want the dir %q", got, s.Dir)
+	want := filepath.Join(s.Dir, "SKILL.md")
+	// No SKILL.md yet: the path is still the file that would be created,
+	// and the caller is told it does not exist rather than being handed
+	// a directory to open in $EDITOR.
+	got, exists := skillEditPath(s)
+	if got != want {
+		t.Errorf("skillEditPath with no SKILL.md = %q, want %q", got, want)
 	}
-	md := filepath.Join(s.Dir, "SKILL.md")
-	if err := os.WriteFile(md, []byte("x"), 0o644); err != nil {
+	if exists {
+		t.Error("skillEditPath reported a missing file as present")
+	}
+	if err := os.WriteFile(want, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := skillEditPath(s); got != md {
-		t.Errorf("skillEditPath = %q, want %q", got, md)
+	if got, exists := skillEditPath(s); got != want || !exists {
+		t.Errorf("skillEditPath = (%q, %v), want (%q, true)", got, exists, want)
+	}
+}
+
+// e on a skill with no SKILL.md used to open a directory listing, so
+// saving could not create the file (review E10). ensureSkillMD writes a
+// valid starter instead, and says that it did.
+func TestEnsureSkillMDCreatesAValidStarter(t *testing.T) {
+	dir := t.TempDir()
+	s := Skill{Name: "new-skill", Dir: filepath.Join(dir, "new-skill")}
+
+	path, created, err := ensureSkillMD(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("ensureSkillMD did not create the file")
+	}
+	if filepath.Base(path) != "SKILL.md" {
+		t.Errorf("created %q, want SKILL.md", path)
+	}
+	// The template must satisfy ScanSkills, or the skill the user just
+	// created shows up with a warning.
+	list, err := ScanSkills(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("got %d skills, want 1", len(list))
+	}
+	created1 := list[0]
+	if created1.Name != "new-skill" {
+		t.Errorf("name = %q, want new-skill", created1.Name)
+	}
+	if !created1.Valid {
+		t.Errorf("the template is not a valid SKILL.md: %v", created1.Issues)
+	}
+	if created1.Desc == "" {
+		t.Error("the template has no description")
+	}
+
+	// A second call must not overwrite what the user has.
+	if err := os.WriteFile(path, []byte("EDITED"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, created, err := ensureSkillMD(s); err != nil || created {
+		t.Errorf("ensureSkillMD on an existing file = (created=%v, %v)", created, err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "EDITED" {
+		t.Error("ensureSkillMD overwrote an existing SKILL.md")
 	}
 }
 
@@ -109,7 +167,7 @@ func TestSkillEditPathUsesTheOnDiskDirectory(t *testing.T) {
 	}
 	// Dir is the real path, not the sanitized one, or editing and
 	// deleting would target a file that does not exist.
-	if got := skillEditPath(s); got != filepath.Join(d, "SKILL.md") {
+	if got, _ := skillEditPath(s); got != filepath.Join(d, "SKILL.md") {
 		t.Errorf("skillEditPath = %q, want the real on-disk path", got)
 	}
 	if _, err := os.Stat(s.Dir); err != nil {

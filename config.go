@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 )
 
@@ -150,9 +151,20 @@ func dataDir() string {
 func trashDir() string { return filepath.Join(dataDir(), "trash") }
 func logPath() string  { return filepath.Join(dataDir(), "skillman.log") }
 
+// plainOutput decides whether to emit colour and styling.
+//
+// A TTY is not enough reason to style output. `skillman view x > out.md`
+// and `skillman view x | less` used to emit glamour's padding as roughly
+// forty escape sequences per filler cell, so the file came out bloated
+// and mangled (review D3). The fix is to make plain the default
+// off-screen and keep a documented way to ask for colour anyway.
 func plainOutput(plainFlag bool) bool {
 	if plainFlag {
 		return true
+	}
+	if os.Getenv("SKILLMAN_COLOR") == "always" {
+		// The escape hatch: colour on a pipe, if that is what you want.
+		return false
 	}
 	if os.Getenv("NO_COLOR") != "" {
 		return true
@@ -160,7 +172,16 @@ func plainOutput(plainFlag bool) bool {
 	if os.Getenv("TERM") == "dumb" {
 		return true
 	}
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return true
+	}
 	return false
+}
+
+// colorForced reports whether colour was explicitly requested for output
+// that is not going to a terminal.
+func colorForced() bool {
+	return os.Getenv("SKILLMAN_COLOR") == "always"
 }
 
 func animationsEnabled(noAnimFlag bool) bool {

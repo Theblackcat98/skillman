@@ -16,11 +16,13 @@ import (
 
 // Trash-based delete with undo. Never rm -rf.
 
+// pendingUndo is the in-memory undo window. It carries no deadline: the
+// timer is the deadline, and a second field that is set but never read is
+// a second source of truth about when the window closes (review F1).
 type pendingUndo struct {
 	Name      string
 	TrashPath string
 	Active    bool
-	ExpiresAt time.Time
 }
 
 // TrashEntry is one deleted skill sitting in the trash.

@@ -11,11 +11,22 @@ import (
 
 // Non-interactive CLI: list, view, validate, delete.
 
-func runList(jsonOut, plain bool, names bool) int {
+// loadSkills is the one place a CLI command reads the skills directory,
+// so every command reports a scan error the same way and the precedence
+// rules live in one function (review F8).
+func loadSkills() ([]Skill, int) {
 	skills, err := ScanSkills(skillsDir())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "scan error: "+err.Error())
-		return 1
+		return nil, 1
+	}
+	return skills, 0
+}
+
+func runList(jsonOut, plain, names, long bool) int {
+	skills, code := loadSkills()
+	if code != 0 {
+		return code
 	}
 	if names {
 		// One name per line: what shell completion needs, with no
@@ -30,13 +41,25 @@ func runList(jsonOut, plain bool, names bool) int {
 			Name     string   `json:"name"`
 			Desc     string   `json:"description"`
 			Category string   `json:"category,omitempty"`
+			License  string   `json:"license,omitempty"`
+			Compat   string   `json:"compatibility,omitempty"`
 			Valid    bool     `json:"valid"`
 			Issues   []string `json:"issues,omitempty"`
+			Size     int64    `json:"size_bytes"`
+			Modified string   `json:"modified,omitempty"`
 			Dir      string   `json:"dir"`
 		}
 		rows := make([]row, 0, len(skills))
 		for _, s := range skills {
-			rows = append(rows, row{s.Name, s.Desc, s.Category, s.Valid, s.Issues, s.Dir})
+			r := row{
+				Name: s.Name, Desc: s.Desc, Category: s.Category,
+				License: s.License, Compat: s.Compat,
+				Valid: s.Valid, Issues: s.Issues, Size: s.Size, Dir: s.Dir,
+			}
+			if !s.ModTime.IsZero() {
+				r.Modified = s.ModTime.Format(time.RFC3339)
+			}
+			rows = append(rows, r)
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -49,10 +72,49 @@ func runList(jsonOut, plain bool, names bool) int {
 	for _, s := range skills {
 		b, _ := s.Badge()
 		// Fixed-width name and badge, truncated description: a 400-char
-		// description used to wrap and break every line-oriented reader.
+		// description used to wrap and break every line-oriented reader
+		// (review E8). --long is the escape hatch.
 		fmt.Printf("%-28s [%s] %s\n", truncRunes(s.Name, 28), b, truncate(s.Desc, 68))
+		if !long {
+			continue
+		}
+		// The scan walks every skill directory to compute Size and
+		// ModTime. Those numbers used to be discarded; --long is where
+		// they are worth something (review D1).
+		var extra []string
+		if s.Category != "" {
+			extra = append(extra, "category="+s.Category)
+		}
+		if s.License != "" {
+			extra = append(extra, "license="+s.License)
+		}
+		if s.Compat != "" {
+			extra = append(extra, "compat="+s.Compat)
+		}
+		extra = append(extra, fmt.Sprintf("size=%s", humanSize(s.Size)))
+		if !s.ModTime.IsZero() {
+			extra = append(extra, "modified="+s.ModTime.Format("2006-01-02 15:04"))
+		}
+		if len(s.Issues) > 0 {
+			extra = append(extra, "issues="+truncRunes(strings.Join(s.Issues, "; "), 60))
+		}
+		fmt.Printf("%-28s         %s\n", "", strings.Join(extra, "  "))
 	}
 	return 0
+}
+
+// humanSize renders a byte count the way a person reads one.
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGT"[exp])
 }
 
 // encodeJSON writes v and reports a failed write. A truncated stream that
@@ -66,10 +128,9 @@ func encodeJSON(enc *json.Encoder, v any) int {
 }
 
 func runView(name string, plain bool) int {
-	skills, err := ScanSkills(skillsDir())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "scan error: "+err.Error())
-		return 1
+	skills, code := loadSkills()
+	if code != 0 {
+		return code
 	}
 	for _, s := range skills {
 		if s.Name == name {
@@ -83,7 +144,14 @@ func runView(name string, plain bool) int {
 			}
 			body := s.Body
 			if !plain {
-				body = s.RenderPreview(80, false)
+				// Glamour picks "no style" when stdout is not a terminal,
+				// so an explicit SKILLMAN_COLOR=always has to name a
+				// style or the escape hatch does nothing.
+				if colorForced() {
+					body = s.renderPreviewStyled(80)
+				} else {
+					body = s.RenderPreview(80, false)
+				}
 			}
 			fmt.Println(strings.TrimRight(body, "\n"))
 			return 0
@@ -94,10 +162,9 @@ func runView(name string, plain bool) int {
 }
 
 func runValidate(jsonOut bool) int {
-	skills, err := ScanSkills(skillsDir())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "scan error: "+err.Error())
-		return 1
+	skills, exit := loadSkills()
+	if exit != 0 {
+		return exit
 	}
 	code := 0
 	if jsonOut {
@@ -135,17 +202,19 @@ func runValidate(jsonOut bool) int {
 			}
 		}
 	}
+	if code != 0 {
+		return code
+	}
 	if worst > 0 {
 		return worst
 	}
-	return code
+	return 0
 }
 
 func runDeleteCLI(name string, assumeYes bool) int {
-	skills, err := ScanSkills(skillsDir())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "scan error: "+err.Error())
-		return 1
+	skills, code := loadSkills()
+	if code != 0 {
+		return code
 	}
 	for _, s := range skills {
 		if s.Name == name {
@@ -323,7 +392,7 @@ func printHelp(cfg Config) {
 		"",
 		"Usage:",
 		"  skillman                        launch TUI (TTY)",
-		"  skillman list [--json|--names]   list skills",
+		"  skillman list [--json|--names|--long]   list skills",
 		"  skillman view <name> [--plain]  show skill preview",
 		"  skillman validate [--json]      validate frontmatter",
 		"  skillman delete <name> --yes    move skill to trash",
@@ -340,6 +409,7 @@ func printHelp(cfg Config) {
 		"  --all              trash purge: remove every entry",
 		"  -h, --help         show this help",
 		"  --version          print the version and exit",
+		"  --long             list: add category, licence, size and mtime",
 		"",
 		"Exit codes:",
 	}

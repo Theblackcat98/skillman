@@ -14,14 +14,14 @@ import (
 func TestListExitCodes(t *testing.T) {
 	skills := t.TempDir()
 	t.Setenv("SKILLMAN_SKILLS", skills)
-	if got := code(func() int { return runList(false, true, false) }); got != 0 {
+	if got := code(func() int { return runList(false, true, false, false) }); got != 0 {
 		t.Errorf("empty list exit = %d, want 0", got)
 	}
 	writeSkill(t, skills, "demo", validFM("demo", "d"))
-	if got := code(func() int { return runList(false, true, false) }); got != 0 {
+	if got := code(func() int { return runList(false, true, false, false) }); got != 0 {
 		t.Errorf("list exit = %d, want 0", got)
 	}
-	if got := code(func() int { return runList(true, true, false) }); got != 0 {
+	if got := code(func() int { return runList(true, true, false, false) }); got != 0 {
 		t.Errorf("list --json exit = %d, want 0", got)
 	}
 }
@@ -291,4 +291,151 @@ func code(f func() int) int {
 	var c int
 	quiet(func() { c = f() })
 	return c
+}
+
+// --- phase 3: the flag contract -------------------------------------------
+
+// A flag that is silently ignored is worse than a flag that is rejected:
+// the script asks for JSON, gets rendered text, and fails later somewhere
+// unrelated (review A9, E15).
+func TestUnsupportedFlagsAreRejected(t *testing.T) {
+	skills, _ := isolatedEnv(t)
+	writeSkill(t, skills, "demo", validFM("demo", "d"))
+	cases := [][]string{
+		{"view", "demo", "--json"},
+		{"view", "demo", "--names"},
+		{"view", "demo", "--long"},
+		{"delete", "demo", "--json"},
+		{"delete", "demo", "--long"},
+		{"validate", "--names"},
+		{"validate", "--long"},
+		{"trash", "list", "--long"},
+		{"completion", "bash", "--json"},
+		{"completion", "bash", "--yes"},
+		{"install", "https://example.com/x", "--json"},
+		{"list", "--names", "--json"},
+	}
+	for _, args := range cases {
+		if got := code(func() int { return run(args) }); got != 2 {
+			t.Errorf("run(%v) = %d, want 2 (flag silently ignored?)", args, got)
+		}
+	}
+}
+
+// `view a b c` used to drop b and c without a word.
+func TestViewRejectsExtraArguments(t *testing.T) {
+	skills, _ := isolatedEnv(t)
+	writeSkill(t, skills, "demo", validFM("demo", "d"))
+	for _, args := range [][]string{
+		{"view", "demo", "extra"},
+		{"view", "a", "b", "c"},
+		{"delete", "demo", "extra"},
+	} {
+		if got := code(func() int { return run(args) }); got != 2 {
+			t.Errorf("run(%v) = %d, want 2", args, got)
+		}
+	}
+}
+
+// A skill whose name looks like a flag has to be reachable, or the flag
+// parser is a name parser with extra steps.
+func TestDoubleDashReachesFlagShapedNames(t *testing.T) {
+	skills, _ := isolatedEnv(t)
+	writeSkill(t, skills, "--names", validFM("flagname", "a skill called --names"))
+	writeSkill(t, skills, "-h", validFM("dashh", "a skill called -h"))
+
+	if got := code(func() int { return run([]string{"view", "--plain", "--", "--names"}) }); got != 0 {
+		t.Errorf("view -- --names = %d, want 0", got)
+	}
+	if got := code(func() int { return run([]string{"view", "--plain", "--", "-h"}) }); got != 0 {
+		t.Errorf("view -- -h = %d, want 0", got)
+	}
+	// And --help still works as a flag.
+	if got := code(func() int { return run([]string{"--help"}) }); got != 0 {
+		t.Errorf("--help = %d, want 0", got)
+	}
+}
+
+// Size and ModTime used to be computed by a full tree walk and then
+// discarded. --long is where they are worth the walk (review D1).
+func TestListLongSurfacesSizeAndModTime(t *testing.T) {
+	skills, _ := isolatedEnv(t)
+	writeSkill(t, skills, "demo",
+		"---\nname: demo\ndescription: d\nlicense: MIT\ncompatibility: any\nmetadata:\n  category: dev\n---\n\nbody\n")
+
+	short := captureStdout(t, func() { runList(false, true, false, false) })
+	if strings.Contains(short, "size=") {
+		t.Errorf("plain list shows --long fields:\n%s", short)
+	}
+	long := captureStdout(t, func() { runList(false, true, false, true) })
+	for _, want := range []string{"size=", "modified=", "demo"} {
+		if !strings.Contains(long, want) {
+			t.Errorf("list --long missing %q:\n%s", want, long)
+		}
+	}
+	// And they are machine-readable too.
+	js := captureStdout(t, func() { runList(true, true, false, false) })
+	if !strings.Contains(js, `"size_bytes"`) || !strings.Contains(js, `"modified"`) {
+		t.Errorf("list --json missing size/modified:\n%s", js)
+	}
+	for _, want := range []string{`"license": "MIT"`, `"compatibility": "any"`, `"category": "dev"`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("list --json missing %s:\n%s", want, js)
+		}
+	}
+}
+
+func TestHumanSize(t *testing.T) {
+	cases := map[int64]string{
+		0: "0 B", 512: "512 B", 1024: "1.0 KiB", 1536: "1.5 KiB",
+		1024 * 1024: "1.0 MiB", 3 * 1024 * 1024 * 1024: "3.0 GiB",
+	}
+	for n, want := range cases {
+		if got := humanSize(n); got != want {
+			t.Errorf("humanSize(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// Piped output must be plain: glamour emitted an escape sequence per
+// padding space, so `view x > out.md` produced a bloated, mangled file
+// (review D3).
+func TestPipedViewIsPlainByDefault(t *testing.T) {
+	skills, _ := isolatedEnv(t)
+	md := "---\nname: demo\ndescription: d\n---\n\n# Heading\n\nSome **bold** text and a list:\n\n- one\n- two\n"
+	writeSkill(t, skills, "demo", md)
+
+	// The test binary's stdout is not a terminal, which is exactly the
+	// case under test.
+	if !plainOutput(false) {
+		t.Error("plainOutput is false with stdout not a terminal")
+	}
+	out := captureStdout(t, func() { runView("demo", plainOutput(false)) })
+	if strings.Contains(out, "\x1b") {
+		t.Errorf("piped view is not plain:\n%q", out)
+	}
+	// With the escape hatch, colour comes back.
+	t.Setenv("SKILLMAN_COLOR", "always")
+	if plainOutput(false) {
+		t.Error("SKILLMAN_COLOR=always did not override the non-terminal default")
+	}
+	styled := captureStdout(t, func() { runView("demo", plainOutput(false)) })
+	if !strings.Contains(styled, "\x1b") {
+		t.Error("SKILLMAN_COLOR=always produced no colour; the hatch does nothing")
+	}
+	// --plain still wins.
+	if !plainOutput(true) {
+		t.Error("--plain did not win over SKILLMAN_COLOR=always")
+	}
+}
+
+func TestVersionFlag(t *testing.T) {
+	out := captureStdout(t, func() {
+		if got := run([]string{"--version"}); got != 0 {
+			t.Errorf("--version = %d, want 0", got)
+		}
+	})
+	if !strings.Contains(out, version) {
+		t.Errorf("--version printed %q, want it to contain %q", out, version)
+	}
 }

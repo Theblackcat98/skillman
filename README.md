@@ -49,7 +49,7 @@ skillman completion zsh  >> ~/.zshrc
 | Command | What it does |
 |---|---|
 | *(none)* | Launch the TUI. On a non-TTY, or with stdout/stderr not a terminal, falls back to `list --plain`. |
-| `list [--json] [--names]` | List skills. `--names` prints one name per line, for completion. |
+| `list [--json] [--names] [--long]` | List skills. `--names` prints one name per line, for completion. `--long` adds category, licence, compatibility, size and mtime. |
 | `view <name> [--plain]` | Print one skill: description, issues, body. |
 | `validate [--json]` | Check every skill's frontmatter. |
 | `delete <name> --yes` | Move a skill to the trash. Refuses without `--yes`. |
@@ -68,13 +68,19 @@ Aliases: `ls` for `list`, `show` for `view`, `check` for `validate`, `rm` for `d
 | `--plain` | No colour, no markdown styling. |
 | `--no-animations` | No spinner, no transitions. |
 | `--skills-dir DIR` | Override the skills directory. Wins over `SKILLMAN_SKILLS` and `config.yaml`. |
-| `--json` | Machine-readable output where the command supports it. |
+| `--json` | Machine-readable output. `list`, `validate`, `trash list` only. |
 | `--names` | One skill name per line (`list` only). |
+| `--long` | `list` only: add category, licence, size and mtime. |
 | `--yes`, `-y` | Assume yes for a destructive action. |
 | `--older-than AGE` | `trash purge` age: `30d` or `720h`. |
 | `--all` | `trash purge`: remove every entry. |
+| `--` | End of flags. Everything after it is a name, so a skill called `-h` is reachable. |
 | `-h`, `--help` | Help, generated from the same tables as this file. |
 | `--version` | Print the version and exit. |
+
+A flag a command does not support is an error, not a no-op: `skillman
+view x --json` exits 2 rather than printing text a script would try to
+parse as data.
 
 ### TUI keys
 
@@ -125,6 +131,7 @@ as long as there is room.
 | `VISUAL` | editor to open SKILL.md with, before EDITOR |
 | `EDITOR` | editor to open SKILL.md with |
 | `NO_COLOR` | set: no colour, anywhere |
+| `SKILLMAN_COLOR` | always: colour even when piped |
 | `TERM` | dumb: no colour and no animation |
 | `NO_ANIMATIONS` | set: no spinner, no transitions |
 | `REDUCED_MOTION` | set: no spinner, no transitions |
@@ -286,6 +293,11 @@ differs from the baseline above, each with a reason:
 [keymap.go](keymap.go), and one row added there reaches the `?` overlay,
 `--help`, the man page and this file at once.
 
+**Plain by default off-screen.** Piped or redirected output is plain:
+`skillman view x > out.md` used to write glamour's padding as roughly
+forty escape sequences per filler cell. `SKILLMAN_COLOR=always` asks for
+colour anyway, and `--plain` always wins.
+
 **Untrusted content.** A `SKILL.md` is third-party input, and a
 directory name is not YAML at all: it is whatever the user unzipped. Any
 control byte in either one — `ESC[2J`, `ESC[1;1H`, `OSC 0`, `OSC 52`, a
@@ -401,14 +413,14 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 0 · Stop the bleeding | done | `-race` and a Go version matrix in CI, staticcheck, shellcheck, govulncheck, cross-builds, tmux smoke in CI, `LICENSE`, `--version`, a documented reason for the lipgloss pin. |
 | 1 · Security | done | One sanitize boundary for every string that came from a skill file. |
 | 2 · Safety net | done | Golden frames over a size table, cell-width and flush-frame assertions, key-driven model tests for `update.go`, frontmatter and sanitize fuzzers plus seeded stress runs, a bounded preview cache, an editor test set, and a trash-writing guard in `TestMain`. |
-| 3 · Cheap correctness | planned | Dead code deleted, colour opt-in for `view`, `--json` contract, shared skill loading. |
+| 3 · Cheap correctness | done | Dead code deleted, `--long` surfacing size and mtime, plain-by-default output with a colour opt-in, a one-table flag contract that rejects unsupported flags, `--` for flag-shaped skill names, and a create-confirmation before `e` writes a missing `SKILL.md`. |
 | 4 · Domain model | planned | Typed `Issue`/`Severity`, one reload path with error surfacing, the dead `Size`/`ModTime` walk removed. |
 | 5 · Layout | planned | One layout owner for both sizing and drawing, a scrollable help overlay. |
 | 6 · Selection state | planned | Selection by name, preview cache invalidated on every reload. |
 | 7 · CLI surface | planned | `list --long`, `--json` accepted or rejected everywhere, one load helper. |
 | 8 · Config, state, keymap | done | Landed as plan phases 11 and 12. |
 | 9 · Docs | planned | README (done), man page, parity test, stale-reference cleanup. |
-| 10 · Memory and scale | planned | Bodies loaded lazily, preview cache bounded. |
+| 10 · Memory and scale | in progress | Preview cache bounded at 24 renders (landed with the safety net). Bodies load lazily, next. |
 | 11 · Install from GitHub | planned | Landed as plan phase 5, once the reload path it depends on exists. |
 
 ## Out of scope

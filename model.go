@@ -20,6 +20,9 @@ const (
 	modeCommand
 	modeHelp
 	modeConfirm
+	// modeConfirmCreate gates creating a SKILL.md that does not exist
+	// yet, so `e` never writes a file the user did not ask for.
+	modeConfirmCreate
 )
 
 type skillsLoadedMsg struct {
@@ -83,12 +86,11 @@ type Model struct {
 	focusPreview  bool
 	showPreviewOv bool // narrow screens: show preview instead of list
 
-	toast      string
-	toastErr   bool
-	toastSeq   int // generation tokens so stale timers can't clear
-	undoSeq    int // fresher state (audit B6)
-	errMsg     string
-	confirmIdx int
+	toast    string
+	toastErr bool
+	toastSeq int // generation tokens so stale timers can't clear
+	undoSeq  int // fresher state (audit B6)
+	errMsg   string
 
 	undo pendingUndo
 

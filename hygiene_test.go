@@ -167,7 +167,7 @@ func TestCLITestsDoNotPolluteStdout(t *testing.T) {
 		// captureStdout already redirects, so this proves the helper
 		// works: what the CLI writes must be captured, not printed.
 		leaked = captureStdout(t, func() {
-			runList(false, true, false)
+			runList(false, true, false, false)
 		})
 	})
 	if !strings.Contains(leaked, "demo") {

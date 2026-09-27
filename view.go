@@ -27,6 +27,8 @@ func (m Model) View() string {
 		return m.renderHelpModal(view)
 	case modeConfirm:
 		return m.renderConfirmModal(view)
+	case modeConfirmCreate:
+		return m.renderCreateModal(view)
 	}
 	return view
 }
@@ -210,6 +212,8 @@ func (m Model) renderStatus() string {
 		mod = m.cmdline.View()
 	case modeConfirm:
 		mod = "confirm"
+	case modeConfirmCreate:
+		mod = "confirm create"
 	case modeHelp:
 		mod = "help"
 	}
@@ -279,7 +283,7 @@ func (m Model) renderFooter() string {
 		hints = "enter keep · esc back"
 	case modeCommand:
 		hints = "enter run · esc cancel · try: validate, reload, clear"
-	case modeConfirm:
+	case modeConfirm, modeConfirmCreate:
 		hints = "y confirm · n cancel"
 	case modeHelp:
 		hints = "esc ? q close"
@@ -335,6 +339,25 @@ func (m Model) renderConfirmModal(under string) string {
 	// "y confirm · n cancel" (audit B11).
 	h := strings.Count(body, "\n") + 4
 	modal := box("confirm delete", body, w, h, true, m.theme, m.plain)
+	return m.overlay(under, modal, m.width, m.height)
+}
+
+// renderCreateModal asks before writing a file that does not exist yet.
+// The wording names the exact file, because "create?" with no path is a
+// question the user can only answer by guessing.
+func (m Model) renderCreateModal(under string) string {
+	name := ""
+	if sel := m.selected(); sel != nil {
+		name = sel.Name
+	}
+	body := fmt.Sprintf("%s has no SKILL.md.\nCreate one from a template and open\nit in $EDITOR?",
+		name)
+	w := 52
+	if w > m.width-4 {
+		w = m.width - 4
+	}
+	h := strings.Count(body, "\n") + 4
+	modal := box("create SKILL.md", body, w, h, true, m.theme, m.plain)
 	return m.overlay(under, modal, m.width, m.height)
 }
 

@@ -14,7 +14,12 @@ import (
 )
 
 // Skill is one directory under skills/ containing SKILL.md.
-
+//
+// Size and ModTime cost a walk of the whole skill directory on every
+// scan. They used to be computed and never read, which halved the useful
+// work of a rescan for nothing (review D1). They are now surfaced:
+// Size and ModTime are columns in `list --long` and fields in
+// `list --json`, and the trash lifecycle reports the same numbers.
 type Skill struct {
 	Name     string
 	Dir      string
@@ -101,6 +106,9 @@ func ScanSkills(dir string) ([]Skill, error) {
 			}
 		}
 		var total int64
+		// The walk is what produces Size and ModTime. It is a real
+		// cost, so it is paid once here and the result is reported
+		// rather than discarded.
 		_ = filepath.Walk(skillPath, func(_ string, info os.FileInfo, _ error) error {
 			if info != nil && !info.IsDir() {
 				total += info.Size()
@@ -206,6 +214,24 @@ func (s Skill) RenderPreview(width int, plain bool) string {
 	}
 	r, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return s.renderPreviewWith(nil, true)
+	}
+	return s.renderPreviewWith(r, false)
+}
+
+// renderPreviewStyled is RenderPreview for the CLI when colour was asked
+// for explicitly on a non-terminal. WithAutoStyle inspects stdout and
+// picks "no style" when it is not a terminal, so SKILLMAN_COLOR=always
+// would be silently ignored without an explicit style here.
+func (s Skill) renderPreviewStyled(width int) string {
+	if width < 20 {
+		width = 20
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {
