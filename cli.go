@@ -44,7 +44,9 @@ func runList(jsonOut, plain, names, long bool) int {
 			License  string   `json:"license,omitempty"`
 			Compat   string   `json:"compatibility,omitempty"`
 			Valid    bool     `json:"valid"`
+			Severity string   `json:"severity"`
 			Issues   []string `json:"issues,omitempty"`
+			Codes    []string `json:"issue_codes,omitempty"`
 			Size     int64    `json:"size_bytes"`
 			Modified string   `json:"modified,omitempty"`
 			Dir      string   `json:"dir"`
@@ -54,7 +56,8 @@ func runList(jsonOut, plain, names, long bool) int {
 			r := row{
 				Name: s.Name, Desc: s.Desc, Category: s.Category,
 				License: s.License, Compat: s.Compat,
-				Valid: s.Valid, Issues: s.Issues, Size: s.Size, Dir: s.Dir,
+				Valid: s.Valid(), Issues: s.issueTexts(), Size: s.Size, Dir: s.Dir,
+				Severity: s.Severity().String(),
 			}
 			if !s.ModTime.IsZero() {
 				r.Modified = s.ModTime.Format(time.RFC3339)
@@ -70,7 +73,7 @@ func runList(jsonOut, plain, names, long bool) int {
 		return 0
 	}
 	for _, s := range skills {
-		b, _ := s.Badge()
+		b := s.Badge()
 		// Fixed-width name and badge, truncated description: a 400-char
 		// description used to wrap and break every line-oriented reader
 		// (review E8). --long is the escape hatch.
@@ -96,7 +99,7 @@ func runList(jsonOut, plain, names, long bool) int {
 			extra = append(extra, "modified="+s.ModTime.Format("2006-01-02 15:04"))
 		}
 		if len(s.Issues) > 0 {
-			extra = append(extra, "issues="+truncRunes(strings.Join(s.Issues, "; "), 60))
+			extra = append(extra, "issues="+truncRunes(strings.Join(s.issueTexts(), "; "), 60))
 		}
 		fmt.Printf("%-28s         %s\n", "", strings.Join(extra, "  "))
 	}
@@ -137,7 +140,7 @@ func runView(name string, plain bool) int {
 			fmt.Printf("# %s\n\n%s\n\n", s.Name, s.Desc)
 			if len(s.Issues) > 0 {
 				fmt.Println("Issues:")
-				for _, is := range s.Issues {
+				for _, is := range s.issueTexts() {
 					fmt.Println("- " + is)
 				}
 				fmt.Println()
@@ -169,13 +172,19 @@ func runValidate(jsonOut bool) int {
 	code := 0
 	if jsonOut {
 		type row struct {
-			Name   string   `json:"name"`
-			Valid  bool     `json:"valid"`
-			Issues []string `json:"issues,omitempty"`
+			Name     string   `json:"name"`
+			Valid    bool     `json:"valid"`
+			Severity string   `json:"severity"`
+			Issues   []string `json:"issues,omitempty"`
+			Codes    []string `json:"issue_codes,omitempty"`
 		}
 		rows := make([]row, 0, len(skills))
 		for _, s := range skills {
-			rows = append(rows, row{s.Name, s.Valid, s.Issues})
+			codes := make([]string, 0, len(s.Issues))
+			for _, is := range s.Issues {
+				codes = append(codes, is.Code)
+			}
+			rows = append(rows, row{s.Name, s.Valid(), s.Severity().String(), s.issueTexts(), codes})
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -184,31 +193,18 @@ func runValidate(jsonOut bool) int {
 		ok, warn, bad := summarize(skills)
 		fmt.Printf("%d ok, %d warn, %d err (%d total)\n", ok, warn, bad, len(skills))
 		for _, s := range skills {
-			if !s.Valid {
-				fmt.Printf("- %s: %s\n", s.Name, strings.Join(s.Issues, "; "))
+			if !s.Valid() {
+				fmt.Printf("- %s [%s]: %s\n", s.Name, s.Severity(), strings.Join(s.issueTexts(), "; "))
 			}
 		}
 	}
-	// Map the worst issue over all skills to one exit code. Returning
-	// from inside the loop made the code depend on alphabetical order
-	// (audit A3): a warn sorting before an error reported the wrong one.
-	worst := 0
-	for _, s := range skills {
-		for _, is := range s.Issues {
-			if strings.HasPrefix(is, "missing SKILL.md") {
-				worst = 2
-			} else if worst < 1 {
-				worst = 1
-			}
-		}
-	}
+	// One owner for the exit-code contract: the worst severity over all
+	// skills, mapped once. Returning from inside the loop made the code
+	// depend on alphabetical order (review A3).
 	if code != 0 {
 		return code
 	}
-	if worst > 0 {
-		return worst
-	}
-	return 0
+	return ValidateExitCode(skills)
 }
 
 func runDeleteCLI(name string, assumeYes bool) int {

@@ -25,6 +25,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshPreviewAt(false)
 		return m, nil
 
+	case editedMsg:
+		// The editor closed cleanly; reload and say so.
+		m.invalidatePreview()
+		return m, m.reloadCmd("edited " + msg.name)
+
 	case skillsLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -39,6 +44,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyFilter()
 		m.sizePanes()
 		return m, nil
+
+	case validateMsg:
+		// The list the user is looking at must match the numbers in the
+		// toast they just read.
+		m.loading = false
+		m.skills = msg.skills
+		m.invalidatePreview()
+		m.applyFilter()
+		m.sizePanes()
+		cmd := m.setToast(msg.text, msg.isErr)
+		return m, cmd
 
 	case toastMsg:
 		cmd := m.setToast(msg.text, msg.isErr)
@@ -281,7 +297,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd := m.doValidate()
 		return m, cmd
 	case "r":
-		cmd := m.rescanCmd()
+		cmd := m.reloadCmd("")
 		return m, cmd
 	case "esc":
 		if m.query != "" {
@@ -341,14 +357,9 @@ func (m *Model) doEdit() tea.Cmd {
 			logf("editor error: %v", err)
 			return toastMsg{text: "editor failed: " + err.Error(), isErr: true}
 		}
-		// Edit is done: reload immediately and use the result, so the
-		// preview never shows stale content.
-		skills, serr := ScanSkills(skillsDir())
-		if serr != nil {
-			logf("post-edit rescan error: %v", serr)
-			return toastMsg{text: "edited " + name + " — rescan failed", isErr: true}
-		}
-		return skillsLoadedMsg{skills: skills}
+		// Edit is done: reload through the one path, so the preview can
+		// never show stale content.
+		return editedMsg{name: name}
 	})
 }
 
@@ -376,7 +387,6 @@ func (m *Model) doCreateAndEdit() tea.Cmd {
 	sk.Body = fmt.Sprintf(skillTemplate, name, name)
 	sk.Desc = "one line, say what this skill is for"
 	sk.Issues = nil
-	sk.Valid = true
 	cmds := []tea.Cmd{
 		toastCmd("created "+name+"/SKILL.md", false),
 		tea.ExecProcess(editorCmd(path), func(eerr error) tea.Msg {
@@ -384,17 +394,15 @@ func (m *Model) doCreateAndEdit() tea.Cmd {
 				logf("editor error: %v", eerr)
 				return toastMsg{text: "editor failed: " + eerr.Error(), isErr: true}
 			}
-			skills, serr := ScanSkills(skillsDir())
-			if serr != nil {
-				logf("post-edit rescan error: %v", serr)
-				return toastMsg{text: "created " + name + " — rescan failed", isErr: true}
-			}
-			return skillsLoadedMsg{skills: skills}
+			return editedMsg{name: name}
 		}),
 	}
 	return tea.Batch(cmds...)
 }
 
+// doDelete moves the selected skill to the trash, then reloads through
+// the one path. The file operation is the only synchronous I/O left here,
+// because it has to report its own error before the reload is scheduled.
 func (m *Model) doDelete() tea.Cmd {
 	sel := m.selected()
 	if sel == nil {
@@ -403,61 +411,52 @@ func (m *Model) doDelete() tea.Cmd {
 	}
 	name := sel.Name
 	dest, err := deleteSkillToTrash(*sel)
+	m.appMode = modeNormal
 	if err != nil {
-		m.appMode = modeNormal
 		logf("delete error: %v", err)
 		return toastCmd("delete failed: "+err.Error(), true)
 	}
-	m.appMode = modeNormal
 	m.undo = pendingUndo{Name: name, TrashPath: dest, Active: true}
-	// Rescan inline.
-	skills, _ := ScanSkills(skillsDir())
-	m.skills = skills
-	m.applyFilter()
-	m.refreshPreview()
 	m.undoSeq++
 	seq := m.undoSeq
-	cmds := []tea.Cmd{
-		m.setToast(fmt.Sprintf("deleted %s — u to undo", name), false),
+	// Forget the cached render now rather than waiting for the reload:
+	// the skill is gone, and the key it is cached under may name a
+	// different skill by the time the list is rebuilt (review A11).
+	m.invalidatePreview()
+	return tea.Batch(
+		m.reloadCmd("deleted "+name+" — u to undo"),
 		tea.Tick(30*time.Second, func(time.Time) tea.Msg { return undoExpireMsg{seq: seq} }),
-	}
-	return tea.Batch(cmds...)
+	)
 }
 
 func (m *Model) doUndo() tea.Cmd {
 	if !m.undo.Active {
 		return toastCmd("nothing to undo", true)
 	}
+	name := m.undo.Name
 	if err := undoDelete(m.undo.Name, m.undo.TrashPath); err != nil {
 		logf("undo error: %v", err)
 		return toastCmd("undo failed: "+err.Error(), true)
 	}
-	name := m.undo.Name
 	m.undo = pendingUndo{}
-	skills, _ := ScanSkills(skillsDir())
-	m.skills = skills
-	m.applyFilter()
-	// Restore cursor to the revived skill.
-	for i, s := range m.filtered {
-		if s.Name == name {
-			m.cursor = i
-			break
-		}
-	}
-	m.refreshPreview()
-	return toastCmd("restored "+name, false)
+	m.pendingSelection = name
+	m.invalidatePreview()
+	return m.reloadCmd("restored " + name)
 }
 
+// doValidate reloads and reports, so the list badges and the summary come
+// from the same scan instead of two (review F9).
 func (m *Model) doValidate() tea.Cmd {
 	return func() tea.Msg {
 		skills, err := ScanSkills(skillsDir())
 		if err != nil {
-			return toastMsg{text: "validate failed", isErr: true}
+			return toastMsg{text: "validate failed: " + err.Error(), isErr: true}
 		}
 		ok, warn, bad := summarize(skills)
-		return toastMsg{
-			text:  fmt.Sprintf("%d ok · %d warn · %d err", ok, warn, bad),
-			isErr: bad > 0,
+		return validateMsg{
+			skills: skills,
+			text:   fmt.Sprintf("%d ok · %d warn · %d err", ok, warn, bad),
+			isErr:  bad > 0,
 		}
 	}
 }
@@ -471,7 +470,7 @@ func (m *Model) runCommand(cmd string) tea.Cmd {
 		}
 		return tea.Quit
 	case "reload", "r":
-		return m.rescanCmd()
+		return m.reloadCmd("")
 	case "validate", "v":
 		return m.doValidate()
 	case "edit", "e":

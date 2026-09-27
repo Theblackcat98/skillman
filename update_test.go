@@ -582,17 +582,41 @@ func TestScanErrorIsSurfaced(t *testing.T) {
 	_ = cmd
 }
 
-func TestValidateRefreshesNothingButSaysSomething(t *testing.T) {
+// v used to produce a toast only, so the badges on screen came from the
+// previous scan while the numbers in the toast came from a fresh one
+// (review F9). It now reloads the list it is reporting on.
+func TestValidateRefreshesTheListItReportsOn(t *testing.T) {
+	skills, _ := isolatedEnv(t)
+	writeSkill(t, skills, "good", "---\nname: good\ndescription: d\n---\n\nbody\n")
+	writeSkill(t, skills, "bad", "no frontmatter here\n")
+
 	m := newTestModel(t, 80, 24, true)
+	// Start from a stale list, as if the last scan predated bad/.
+	m.skills = []Skill{{Name: "stale", Desc: "d", Dir: "/nonexistent/stale"}}
+	m.applyFilter()
+
 	mm, cmd := m.Update(keyPress('v'))
 	m = mm.(Model)
 	if cmd == nil {
 		t.Fatal("v produced no command")
 	}
-	// The command returns a toast rather than a message the model
-	// handles, so the assertion is on the payload.
-	if _, ok := cmd().(toastMsg); !ok {
-		t.Error("v did not produce a validation summary")
+	msg, ok := cmd().(validateMsg)
+	if !ok {
+		t.Fatalf("v produced %T, want a validateMsg that carries a scan", cmd())
+	}
+	if !strings.Contains(msg.text, "1 warn") {
+		t.Errorf("summary = %q, want it to count the broken skill", msg.text)
+	}
+	if len(msg.skills) != 2 {
+		t.Errorf("validate carried %d skills, want 2", len(msg.skills))
+	}
+	// And the model takes that list, so the badge on screen matches.
+	send(t, &m, msg)
+	if len(m.skills) != 2 {
+		t.Errorf("after v the model shows %d skills, want 2", len(m.skills))
+	}
+	if !strings.Contains(m.View(), "1 warn") {
+		t.Errorf("the frame does not carry the summary: %q", m.toast)
 	}
 }
 
@@ -698,22 +722,49 @@ func TestPreviewCacheIsDroppedOnReload(t *testing.T) {
 	}
 }
 
-// A delete and an undo both rewrite the list by hand, bypassing
-// skillsLoadedMsg. They must still drop the cache, or a skill that comes
-// back shows the content it had when it was deleted.
-func TestPreviewCacheIsDroppedOnDeleteAndUndo(t *testing.T) {
+// Delete and undo rewrite the list, so they must drop the cache: the
+// skill is gone, and the cache key is name plus width only, so a render
+// made before the delete can be served for a different skill that later
+// takes the name (review A11). Both now go through reloadCmd, which is
+// asynchronous, so the assertion is on the invalidation plus the reload
+// being scheduled rather than on the list having changed yet.
+func TestDeleteAndUndoDropTheCacheAndReload(t *testing.T) {
 	isolatedEnv(t)
 	m := newTestModel(t, 80, 24, true)
 	m.skills = fixtureSkills(t, 2)
 	m.applyFilter()
-	before := m.cachedPreview(m.skills[0], 40)
-	if before == "" {
-		t.Fatal("setup: no cached render")
+	_ = m.cachedPreview(m.skills[0], 40)
+	if len(m.previewCache) == 0 {
+		t.Fatal("setup: nothing cached")
 	}
-	applyCmd(t, &m, m.doDelete())
-	after := m.cachedPreview(m.skills[0], 40)
-	if after == before {
-		t.Error("the cached render survived a delete")
+
+	cmd := m.doDelete()
+	if cmd == nil {
+		t.Fatal("delete scheduled nothing")
+	}
+	if len(m.previewCache) != 0 {
+		t.Errorf("delete left %d cached renders", len(m.previewCache))
+	}
+	if !m.loading {
+		t.Error("delete did not set the loading flag; the reload is not scheduled")
+	}
+	if m.undo.Name == "" || !m.undo.Active {
+		t.Error("delete did not open an undo window")
+	}
+	// The skill is gone from disk right away; the list catches up when
+	// the reload lands.
+	if _, err := os.Stat(m.undo.TrashPath); err != nil {
+		t.Errorf("the skill is not in the trash: %v", err)
+	}
+
+	// Undo restores it, invalidates again, and remembers where to put
+	// the cursor.
+	_ = m.doUndo()
+	if len(m.previewCache) != 0 {
+		t.Errorf("undo left %d cached renders", len(m.previewCache))
+	}
+	if m.pendingSelection != m.undo.Name && m.undo.Name != "" {
+		t.Error("undo did not record where the cursor should go")
 	}
 }
 

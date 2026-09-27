@@ -92,7 +92,7 @@ var exitCodeDoc = []struct {
 }{
 	{0, "ok"},
 	{1, "validation issues, or skill not found"},
-	{2, "bad usage, or a skill is missing SKILL.md"},
+	{2, "bad usage, or a skill has a broken frontmatter or no SKILL.md"},
 	{3, "destructive action refused without --yes"},
 	{4, "command not built in this version"},
 }

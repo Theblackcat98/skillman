@@ -51,7 +51,7 @@ skillman completion zsh  >> ~/.zshrc
 | *(none)* | Launch the TUI. On a non-TTY, or with stdout/stderr not a terminal, falls back to `list --plain`. |
 | `list [--json] [--names] [--long]` | List skills. `--names` prints one name per line, for completion. `--long` adds category, licence, compatibility, size and mtime. |
 | `view <name> [--plain]` | Print one skill: description, issues, body. |
-| `validate [--json]` | Check every skill's frontmatter. |
+| `validate [--json]` | Check every skill's frontmatter. Exit code follows the worst issue: 2 for a broken frontmatter or a missing `SKILL.md`, 1 for a warning, 0 clean. `--json` adds `severity` and `issue_codes`. |
 | `delete <name> --yes` | Move a skill to the trash. Refuses without `--yes`. |
 | `trash list [--json]` | List trashed skills, newest first. |
 | `trash restore <name>` | Put a trashed skill back under its original name. |
@@ -117,7 +117,7 @@ as long as there is room.
 |---|---|
 | 0 | ok |
 | 1 | validation issues, or skill not found |
-| 2 | bad usage, or a skill is missing SKILL.md |
+| 2 | bad usage, or a skill has a broken frontmatter or no SKILL.md |
 | 3 | destructive action refused without --yes |
 | 4 | command not built in this version |
 
@@ -245,6 +245,12 @@ was built against. That reference has been absorbed here and removed.
   while loading, and a 20fps cap.
 - Meaningful exit codes, confirmation plus undo for destructive actions.
 - Non-interactive mode: flags, JSON, stable exit codes.
+
+**Severity is data, not prose.** Every problem is an `Issue` with a
+stable `Code` and a `Severity`. The badge, the row colour, the
+`validate` summary and the exit code all read one value, so rewording a
+message can never change an exit code. A malformed frontmatter is one
+error, not three warnings about a file nothing can read.
 
 **Layers.** Base view, then overlays (filter, command, help), then
 modals (confirm), then notifications (toast), then the status line.
@@ -414,7 +420,7 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 1 · Security | done | One sanitize boundary for every string that came from a skill file. |
 | 2 · Safety net | done | Golden frames over a size table, cell-width and flush-frame assertions, key-driven model tests for `update.go`, frontmatter and sanitize fuzzers plus seeded stress runs, a bounded preview cache, an editor test set, and a trash-writing guard in `TestMain`. |
 | 3 · Cheap correctness | done | Dead code deleted, `--long` surfacing size and mtime, plain-by-default output with a colour opt-in, a one-table flag contract that rejects unsupported flags, `--` for flag-shaped skill names, and a create-confirmation before `e` writes a missing `SKILL.md`. |
-| 4 · Domain model | planned | Typed `Issue`/`Severity`, one reload path with error surfacing, the dead `Size`/`ModTime` walk removed. |
+| 4 · Domain model | done | Typed `Issue`/`Severity` with stable codes, one reload path used by every operation, malformed frontmatter reported as one error instead of three warnings. |
 | 5 · Layout | planned | One layout owner for both sizing and drawing, a scrollable help overlay. |
 | 6 · Selection state | planned | Selection by name, preview cache invalidated on every reload. |
 | 7 · CLI surface | planned | `list --long`, `--json` accepted or rejected everywhere, one load helper. |

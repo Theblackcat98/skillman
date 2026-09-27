@@ -13,11 +13,11 @@ func makeSkills(n int) []Skill {
 	out := make([]Skill, 0, n)
 	for i := 1; i <= n; i++ {
 		out = append(out, Skill{
-			Name:  fmt.Sprintf("skill-%02d", i),
-			Desc:  fmt.Sprintf("Test skill number %02d", i),
-			Valid: true,
-			Body:  "body",
-			Dir:   "/nonexistent/" + fmt.Sprintf("skill-%02d", i),
+			Name: fmt.Sprintf("skill-%02d", i),
+			Desc: fmt.Sprintf("Test skill number %02d", i),
+
+			Body: "body",
+			Dir:  "/nonexistent/" + fmt.Sprintf("skill-%02d", i),
 		})
 	}
 	return out
@@ -229,7 +229,7 @@ func TestPreviewBanner(t *testing.T) {
 	m.skills[0].License = "MIT"
 	m.skills[0].Compat = "any"
 	m.skills[0].Category = "analysis"
-	m.skills[0].Issues = []string{"missing description"}
+	m.skills[0].Issues = []Issue{{Code: "test", Msg: "missing description", Sev: SevWarn}}
 	m.invalidatePreview()
 	m.applyFilter()
 	view := m.View()
@@ -404,7 +404,7 @@ func longBodyModel(t *testing.T, w, h int) Model {
 		Desc:   "A skill with a very long body for scroll tests",
 		Body:   body.String(),
 		Dir:    "/nonexistent/longbody",
-		Issues: []string{"missing description"},
+		Issues: []Issue{{Code: "test", Msg: "missing description", Sev: SevWarn}},
 	}}
 	send(t, &m, tea.WindowSizeMsg{Width: w, Height: h})
 	m.loading = false

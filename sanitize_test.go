@@ -107,7 +107,7 @@ func TestScanSanitizesEveryDisplayField(t *testing.T) {
 		"Body":     s.Body,
 	}
 	for i, is := range s.Issues {
-		fields["Issue["+itoaTest(i)+"]"] = is
+		fields["Issue["+itoaTest(i)+"]"] = is.Msg
 	}
 	for name, val := range fields {
 		if hasControlByte(val) {

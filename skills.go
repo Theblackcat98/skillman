@@ -13,6 +13,51 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Severity is how bad a problem is. It is data, not prose: the badge,
+// the row colour, the validate summary and the exit code all read this
+// one value, so none of them can disagree with the others (review A4).
+//
+// The old code stored issue *messages* and decided severity by asking
+// whether a message started with "missing SKILL.md", so rewording that
+// string silently changed exit codes.
+type Severity int
+
+const (
+	SevOK Severity = iota
+	SevWarn
+	SevErr
+)
+
+// String is the badge text and the word in `validate` output.
+func (s Severity) String() string {
+	switch s {
+	case SevErr:
+		return "err"
+	case SevWarn:
+		return "warn"
+	default:
+		return "ok"
+	}
+}
+
+// Issue codes. They are stable identifiers so a test or a script can key
+// on a problem without matching English text.
+const (
+	CodeFileMissing  = "file.missing"
+	CodeFMMalformed  = "frontmatter.malformed"
+	CodeNameMissing  = "name.missing"
+	CodeDescMissing  = "description.missing"
+	CodeNameMismatch = "name.mismatch"
+)
+
+// Issue is one problem with one skill. Msg is human text and is never
+// parsed back; Code is the stable part.
+type Issue struct {
+	Code string
+	Msg  string
+	Sev  Severity
+}
+
 // Skill is one directory under skills/ containing SKILL.md.
 //
 // Size and ModTime cost a walk of the whole skill directory on every
@@ -29,8 +74,7 @@ type Skill struct {
 	Category string
 	Size     int64
 	ModTime  time.Time
-	Valid    bool
-	Issues   []string
+	Issues   []Issue
 	Body     string
 }
 
@@ -67,36 +111,44 @@ func ScanSkills(dir string) ([]Skill, error) {
 		mdPath := filepath.Join(skillPath, "SKILL.md")
 		raw, err := os.ReadFile(mdPath)
 		if err != nil {
-			s.Valid = false
-			s.Issues = []string{"missing SKILL.md"}
 			s.Desc = "(no SKILL.md)"
-			if st, serr := os.Stat(skillPath); serr == nil {
-				s.ModTime = st.ModTime()
-			}
+			s.Issues = []Issue{{
+				Code: CodeFileMissing,
+				Msg:  "missing SKILL.md",
+				Sev:  SevErr,
+			}}
 			out = append(out, s)
 			continue
 		}
 		fm, body, ferr := parseFrontmatter(string(raw))
 		s.Body = safeBody(body)
 		if ferr != nil {
-			// Surface parse failures instead of hiding them behind
-			// misleading "missing name/description" issues (B12).
-			s.Issues = append(s.Issues, "invalid frontmatter: "+safeText(ferr.Error()))
+			// A parse error is the whole story. The old code appended
+			// "missing name" and "missing description" on top of it,
+			// because the zero-valued frontmatter had empty fields, and
+			// so reported three problems for one broken file (review A6).
+			s.Issues = append(s.Issues, Issue{
+				Code: CodeFMMalformed,
+				Msg:  "invalid frontmatter: " + safeText(ferr.Error()),
+				Sev:  SevErr,
+			})
+			s.Desc = "(unreadable frontmatter)"
+			out = append(out, s)
+			continue
 		}
-		if fm.Name != "" {
-			// keep dir name as identity, but record mismatch
-			if fm.Name != name {
-				s.Issues = append(s.Issues, fmt.Sprintf("frontmatter name %q != dirname %q",
-					safeText(fm.Name), s.Name))
-			}
+		if fm.Name == "" {
+			s.Issues = append(s.Issues, Issue{Code: CodeNameMissing, Msg: "missing name", Sev: SevWarn})
+		} else if fm.Name != name {
+			s.Issues = append(s.Issues, Issue{
+				Code: CodeNameMismatch,
+				Msg:  fmt.Sprintf("frontmatter name %q != dirname %q", safeText(fm.Name), s.Name),
+				Sev:  SevWarn,
+			})
 		}
 		s.Desc = firstLine(safeBody(fm.Description))
 		if s.Desc == "" {
 			s.Desc = "(no description)"
-			s.Issues = append(s.Issues, "missing description")
-		}
-		if fm.Name == "" {
-			s.Issues = append(s.Issues, "missing name")
+			s.Issues = append(s.Issues, Issue{Code: CodeDescMissing, Msg: "missing description", Sev: SevWarn})
 		}
 		s.License = safeText(fm.License)
 		s.Compat = safeText(fm.Compatibility)
@@ -119,7 +171,6 @@ func ScanSkills(dir string) ([]Skill, error) {
 		if st, serr := os.Stat(mdPath); serr == nil {
 			s.ModTime = st.ModTime()
 		}
-		s.Valid = len(s.Issues) == 0
 		out = append(out, s)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -190,17 +241,64 @@ func FilterSkills(skills []Skill, query string) []Skill {
 	return out
 }
 
-// Badge returns short status text and level.
-func (s Skill) Badge() (string, string) {
-	if len(s.Issues) == 0 {
-		return "ok", "ok"
-	}
+// Severity is the worst issue on this skill, or SevOK.
+func (s Skill) Severity() Severity {
+	worst := SevOK
 	for _, is := range s.Issues {
-		if strings.HasPrefix(is, "missing SKILL.md") {
-			return "err", "err"
+		if is.Sev > worst {
+			worst = is.Sev
 		}
 	}
-	return "warn", "warn"
+	return worst
+}
+
+// Badge is the short status text. It is derived from Severity, so the
+// badge, the row colour, the validate summary and the exit code cannot
+// disagree (review A4).
+func (s Skill) Badge() string { return s.Severity().String() }
+
+// Valid reports whether the skill has no issues. It reads Severity rather
+// than carrying its own flag, so it cannot go stale.
+func (s Skill) Valid() bool { return s.Severity() == SevOK }
+
+// issueTexts is the issue messages on their own, for the places that
+// render a list of them.
+func (s Skill) issueTexts() []string {
+	if len(s.Issues) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(s.Issues))
+	for _, is := range s.Issues {
+		out = append(out, is.Msg)
+	}
+	return out
+}
+
+// WorstSeverity is the worst severity across a list, and the only place
+// the exit-code contract is decided. One pass over every issue, then one
+// map: the old code returned from inside a loop on the first invalid
+// skill, so the code depended on alphabetical order (review A3).
+func WorstSeverity(skills []Skill) Severity {
+	worst := SevOK
+	for _, s := range skills {
+		if s.Severity() > worst {
+			worst = s.Severity()
+		}
+	}
+	return worst
+}
+
+// ValidateExitCode maps the worst severity to the documented exit code:
+// 0 clean, 1 warnings, 2 a skill has no SKILL.md.
+func ValidateExitCode(skills []Skill) int {
+	switch WorstSeverity(skills) {
+	case SevErr:
+		return 2
+	case SevWarn:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // RenderPreview returns glamour-rendered markdown, or raw fallback.
@@ -245,7 +343,7 @@ func (s Skill) renderPreviewStyled(width int) string {
 func (s Skill) renderPreviewWith(r *glamour.TermRenderer, plain bool) string {
 	if s.Body == "" {
 		if len(s.Issues) > 0 {
-			return "Issues:\n- " + strings.Join(s.Issues, "\n- ") + "\n"
+			return "Issues:\n- " + strings.Join(s.issueTexts(), "\n- ") + "\n"
 		}
 		return "(empty SKILL.md)"
 	}
@@ -259,16 +357,17 @@ func (s Skill) renderPreviewWith(r *glamour.TermRenderer, plain bool) string {
 	return out
 }
 
+// summarize counts skills by severity for the one-line summary. It reads
+// Severity, so it cannot drift from the badge or the exit code.
 func summarize(skills []Skill) (ok, warn, bad int) {
 	for _, s := range skills {
-		b, _ := s.Badge()
-		switch b {
-		case "ok":
-			ok++
-		case "warn":
+		switch s.Severity() {
+		case SevErr:
+			bad++
+		case SevWarn:
 			warn++
 		default:
-			bad++
+			ok++
 		}
 	}
 	return ok, warn, bad

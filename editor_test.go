@@ -118,7 +118,7 @@ func TestEnsureSkillMDCreatesAValidStarter(t *testing.T) {
 	if created1.Name != "new-skill" {
 		t.Errorf("name = %q, want new-skill", created1.Name)
 	}
-	if !created1.Valid {
+	if !created1.Valid() {
 		t.Errorf("the template is not a valid SKILL.md: %v", created1.Issues)
 	}
 	if created1.Desc == "" {

@@ -39,21 +39,54 @@ type toastClearMsg struct{ seq int }
 
 type undoExpireMsg struct{ seq int }
 
+// editedMsg says the editor closed without error. The reload itself is
+// scheduled by the model, so the edit path and every other reload share
+// one code path.
+type editedMsg struct{ name string }
+
+// validateMsg carries the rescan from `v` back into the model, so the
+// list badges and the summary come from one scan (review F9). It used to
+// be a bare toast, which meant the badges on screen were from the
+// previous scan.
+type validateMsg struct {
+	skills []Skill
+	text   string
+	isErr  bool
+}
+
 func loadSkillsCmd() tea.Cmd {
+	return loadSkillsAt(skillsDir())
+}
+
+func loadSkillsAt(dir string) tea.Cmd {
 	return func() tea.Msg {
-		skills, err := ScanSkills(skillsDir())
+		skills, err := ScanSkills(dir)
 		return skillsLoadedMsg{skills: skills, err: err}
 	}
 }
 
-// rescanCmd reloads skills and restarts the spinner tick (the tick chain
-// stops when idle, so it must be re-armed for each new scan).
-func (m *Model) rescanCmd() tea.Cmd {
+// reloadCmd is the one path that re-reads the skills directory. Every
+// operation that changes the disk underneath the model funnels through it:
+// the initial scan, r, a post-edit reload, a delete and an undo.
+//
+// It used not to. Delete and undo called ScanSkills inline inside
+// Update and threw the error away, so a transient read failure emptied
+// the list while the status bar still claimed the skill was deleted
+// (review B1, B2). More importantly the inline rescan ran synchronously
+// on the update path, which freezes the UI on slow storage or with a
+// thousand skills.
+func (m *Model) reloadCmd(reason string) tea.Cmd {
 	m.loading = true
-	if m.noAnim {
-		return loadSkillsCmd()
+	cmds := []tea.Cmd{loadSkillsCmd()}
+	if !m.noAnim {
+		// The tick chain stops when idle, so it has to be re-armed for
+		// each new scan or the spinner freezes mid-turn.
+		cmds = append(cmds, m.spinner.Tick)
 	}
-	return tea.Batch(loadSkillsCmd(), m.spinner.Tick)
+	if reason != "" {
+		cmds = append(cmds, toastCmd(reason, false))
+	}
+	return tea.Batch(cmds...)
 }
 
 func toastCmd(text string, isErr bool) tea.Cmd {
@@ -247,7 +280,7 @@ func (m *Model) cachedPreview(s Skill, w int) string {
 	if len(s.Issues) > 0 {
 		head.WriteString("## Issues\n\n")
 		for _, is := range s.Issues {
-			head.WriteString("- " + is + "\n")
+			head.WriteString("- " + is.Msg + "\n")
 		}
 		head.WriteString("\n")
 	}

@@ -137,7 +137,7 @@ func FuzzScanSurvivesOddTrees(f *testing.F) {
 				t.Errorf("a skill has an empty name: %+v", s)
 			}
 			// The badge must be derivable from the issue list alone.
-			b, _ := s.Badge()
+			b := s.Badge()
 			if b != "ok" && b != "warn" && b != "err" {
 				t.Errorf("badge = %q, want ok, warn or err", b)
 			}

@@ -122,7 +122,7 @@ func (m Model) renderListBox(w, h int) string {
 
 func (m Model) renderRow(i, w int) string {
 	s := m.filtered[i]
-	badge, level := s.Badge()
+	level := s.Severity()
 	marker := "  "
 	if i == m.cursor {
 		marker = "> "
@@ -139,7 +139,7 @@ func (m Model) renderRow(i, w int) string {
 	if nameW < 1 {
 		nameW = 1
 	}
-	line := marker + padRight(truncRunes(s.Name, nameW), nameW) + " " + padRight("["+badge+"]", badgeCol)
+	line := marker + padRight(truncRunes(s.Name, nameW), nameW) + " " + padRight("["+level.String()+"]", badgeCol)
 	if s.Category != "" {
 		budget := w - lipWidth(line) - 1
 		if budget > 12 {
@@ -155,9 +155,9 @@ func (m Model) renderRow(i, w int) string {
 			return line
 		}
 		switch level {
-		case "err":
+		case SevErr:
 			return m.theme.Error.Render(line)
-		case "warn":
+		case SevWarn:
 			return m.theme.Warning.Render(line)
 		default:
 			return line
