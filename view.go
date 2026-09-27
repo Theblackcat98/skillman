@@ -54,10 +54,7 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderMain() string {
-	h := m.height - 6
-	if h < 3 {
-		h = 3
-	}
+	h := m.mainBoxH()
 	if m.width < 70 {
 		// Narrow: toggle between list and preview.
 		if m.showPreviewOv {
@@ -77,10 +74,9 @@ func (m Model) renderListBox(w, h int) string {
 		title = fmt.Sprintf("skills  /%s", m.query)
 	}
 	var rows []string
-	vis := h - 2 // borders
-	if vis < 1 {
-		vis = 1
-	}
+	// box() renders h - 3 content lines (title + two borders); the old
+	// h - 2 made the selected row unrenderable at the bottom edge (B2).
+	vis := contentH(h)
 	start := 0
 	if m.cursor >= vis {
 		start = m.cursor - vis + 1
@@ -90,10 +86,15 @@ func (m Model) renderListBox(w, h int) string {
 		end = len(m.filtered)
 	}
 	if len(m.filtered) == 0 {
-		if m.loading {
+		switch {
+		case m.loading:
 			rows = append(rows, "  scanning…")
-		} else {
+		case len(m.skills) == 0:
 			rows = append(rows, "  (no skills — r to rescan)")
+		default:
+			// A query is active and matched nothing: rescanning will
+			// not help, so offer the filter escape hatch instead (B7).
+			rows = append(rows, "  (no match for /"+m.query+")", "  esc clears the filter")
 		}
 	} else {
 		for i := start; i < end; i++ {
@@ -114,11 +115,28 @@ func (m Model) renderRow(i, w int) string {
 	if i == m.cursor {
 		marker = "> "
 	}
-	cat := s.Category
-	if cat == "" {
-		cat = "—"
+	// Priority layout: marker + name + badge must always fit; the
+	// category column only appears when room remains. The old fixed
+	// layout truncated the badge away entirely at 70-97 cols, leaving
+	// status conveyed by color alone (audit B1).
+	const nameCap, badgeCol = 22, 6
+	nameW := w - 2 - 1 - badgeCol - 1 // marker, gap, badge column, gap
+	if nameW > nameCap {
+		nameW = nameCap
 	}
-	line := fmt.Sprintf("%s%-22s %-12s [%s]", marker, truncRunes(s.Name, 22), truncRunes(cat, 12), badge)
+	if nameW < 1 {
+		nameW = 1
+	}
+	line := marker + padRight(truncRunes(s.Name, nameW), nameW) + " " + padRight("["+badge+"]", badgeCol)
+	if s.Category != "" {
+		budget := w - lipWidth(line) - 1
+		if budget > 12 {
+			budget = 12
+		}
+		if budget >= 4 {
+			line += " " + truncRunes(s.Category, budget)
+		}
+	}
 	line = truncate(line, w)
 	if i != m.cursor {
 		if m.plain {
@@ -162,16 +180,21 @@ func (m Model) renderStatus() string {
 		left = "working…"
 	} else {
 		sel := m.selected()
-		if sel != nil {
+		switch {
+		case sel != nil:
 			left = sel.Name + " · " + truncRunes(sel.Desc, m.width-30)
-		} else {
+		case m.query != "":
+			// Never claim "ready" while a filter is hiding everything (B15).
+			left = "no match for /" + m.query
+		default:
 			left = "ready"
 		}
 	}
 	mod := "normal"
 	switch m.appMode {
 	case modeFilter:
-		mod = "filter: " + m.filter.View()
+		// The input's own "/" prompt is the mode indicator.
+		mod = m.filter.View()
 	case modeCommand:
 		mod = m.cmdline.View()
 	case modeConfirm:
@@ -206,7 +229,13 @@ func (m Model) renderFooter() string {
 	case modeConfirm:
 		hints = "y confirm · n cancel"
 	default:
-		hints = "j/k move · tab pane · / filter · : cmd · e edit · d del · u undo · v validate · ? help · q quit"
+		// Must fit 80 cols with `? help · q quit` intact (B9); the
+		// full keymap lives in the ? overlay.
+		if m.width < 70 {
+			hints = "j/k · / find · : cmd · ? help · q quit"
+		} else {
+			hints = "j/k move · / filter · : cmd · e edit · d del · u undo · ? help · q quit"
+		}
 	}
 	hints = truncate(hints, m.width)
 	if m.plain {

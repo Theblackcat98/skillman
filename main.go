@@ -91,6 +91,12 @@ func run(args []string) int {
 		}
 	}
 
+	// --json on its own means list --json; launching a TUI would just
+	// silently ignore the flag (audit B8).
+	if jsonOut {
+		return runList(true, true)
+	}
+
 	// No TTY -> behave as list --plain.
 	if !term.IsTerminal(int(os.Stdout.Fd())) || !term.IsTerminal(int(os.Stdin.Fd())) {
 		return runList(jsonOut, true)

@@ -83,7 +83,6 @@ type Model struct {
 
 	toast      string
 	toastErr   bool
-	toastAt    time.Time
 	errMsg     string
 	confirmIdx int
 
@@ -153,7 +152,13 @@ func (m *Model) refreshPreview() {
 	sel := m.selected()
 	w := m.previewWidth()
 	if sel == nil {
-		m.preview.SetContent("(no skills match — press / to filter, r to rescan)")
+		if len(m.skills) == 0 {
+			m.preview.SetContent("(no skills in " + skillsDir() + ") — r rescans")
+		} else {
+			// A query is active and matched nothing (B7).
+			m.preview.SetContent("(no match for /" + m.query + ") — esc clears the filter")
+		}
+		m.preview.GotoTop()
 		return
 	}
 	m.preview.SetContent(m.cachedPreview(*sel, w))
@@ -216,11 +221,28 @@ func (m *Model) previewWidth() int {
 func (m *Model) setToast(text string, isErr bool) tea.Cmd {
 	m.toast = text
 	m.toastErr = isErr
-	m.toastAt = time.Now()
-	if m.noAnim && !isErr {
-		return nil
-	}
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 		return toastClearMsg{}
 	})
+}
+
+// mainBoxH is the height of the list/preview box. Layout (View) and
+// sizing (sizePanes) must share this one number — duplicated constants
+// drifted before and produced the off-by-one in audit B2.
+func (m Model) mainBoxH() int {
+	h := m.height - 6 // header + status + footer + one line of slack
+	if h < 5 {
+		h = 5
+	}
+	return h
+}
+
+// contentH is how many body lines box() actually renders for a box of
+// height h: title line + top + bottom borders are not content.
+func contentH(h int) int {
+	v := h - 3
+	if v < 1 {
+		v = 1
+	}
+	return v
 }

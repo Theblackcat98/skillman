@@ -85,7 +85,7 @@ Hygiene gaps:
 
 ---
 
-## Phase 7 — Core correctness fixes (B1–B4, B7–B9, B15)
+## Phase 7 — Core correctness fixes (B1–B4, B7–B9, B15) ✅
 - Goal: every key works in every mode; all info visible at 80×24.
 - Files: `view.go`, `update.go`, `model.go`, `main.go`.
 - Fixes: priority row layout (name + badge always fit; category drops when narrow — kills B1); align list rows with `box` content lines (B2); route nav keys to the viewport while preview is focused and stop firing list-only keys there (B3); global Ctrl-C check before mode dispatch (B4); distinct empty-dir vs no-match states with `Esc` hint (B7); bare `--json` ⇒ `list --json` on TTY (B8); compact context-aware footer so `? help · q quit` fits 80 cols (B9); status/query copy fixes (B15).

@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -95,24 +94,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) sizePanes() {
-	// header(2) + status(1) + footer(1) + borders
-	h := m.height - 6
-	if h < 5 {
-		h = 5
-	}
-	w := m.width/2 - 3
-	if m.width < 70 {
-		w = m.width - 4
-	}
-	if w < 10 {
-		w = 10
-	}
+	h := m.mainBoxH()
 	m.preview.Width = m.previewWidth()
-	m.preview.Height = h
+	// Match box() content lines exactly, otherwise the last preview
+	// lines can never scroll into view.
+	m.preview.Height = contentH(h)
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+
+	// Ctrl-C must quit from every layer — filter, command, help, and
+	// confirm otherwise swallow it and the app becomes unkillable (B4).
+	if key == "ctrl+c" {
+		return m, tea.Quit
+	}
 
 	// Help overlay: any Esc/?/q/Enter closes.
 	if m.appMode == modeHelp {
@@ -173,6 +169,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, c
 	}
 
+	// Preview focus: navigation keys scroll the preview, and d/u —
+	// half-page scroll keys in a viewport — must never reach the list's
+	// delete/undo handlers from here (audit B3).
+	if m.focusPreview {
+		switch key {
+		case "g", "home":
+			m.preview.GotoTop()
+			return m, nil
+		case "G", "end":
+			m.preview.GotoBottom()
+			return m, nil
+		case "j", "k", "up", "down", "pgup", "pgdown", "ctrl+f", "ctrl+b",
+			"d", "u", "f", "b", " ", "ctrl+d", "ctrl+u":
+			var c tea.Cmd
+			m.preview, c = m.preview.Update(msg)
+			return m, c
+		}
+	}
+
 	// Normal mode.
 	switch key {
 	case "q", "ctrl+c":
@@ -221,9 +236,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		return m, m.doEdit()
 	case "d", "delete":
-		if m.selected() != nil {
-			m.appMode = modeConfirm
+		if m.selected() == nil {
+			return m, toastCmd("nothing to delete", true)
 		}
+		m.appMode = modeConfirm
 		return m, nil
 	case "u":
 		return m, m.doUndo()
@@ -371,9 +387,10 @@ func (m *Model) runCommand(cmd string) tea.Cmd {
 	case "edit", "e":
 		return m.doEdit()
 	case "delete", "d":
-		if m.selected() != nil {
-			m.appMode = modeConfirm
+		if m.selected() == nil {
+			return toastCmd("nothing to delete", true)
 		}
+		m.appMode = modeConfirm
 		return nil
 	case "help", "h", "?":
 		m.appMode = modeHelp
@@ -394,6 +411,3 @@ func (m *Model) runCommand(cmd string) tea.Cmd {
 		return toastCmd("unknown command: "+cmd, true)
 	}
 }
-
-// Ensure viewport import is used even when narrow.
-var _ = viewport.Model{}
