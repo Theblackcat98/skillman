@@ -286,6 +286,14 @@ differs from the baseline above, each with a reason:
 [keymap.go](keymap.go), and one row added there reaches the `?` overlay,
 `--help`, the man page and this file at once.
 
+**Untrusted content.** A `SKILL.md` is third-party input, and a
+directory name is not YAML at all: it is whatever the user unzipped. Any
+control byte in either one — `ESC[2J`, `ESC[1;1H`, `OSC 0`, `OSC 52`, a
+tab, a C1 code, a bidi override — is escaped to a visible `\xNN` before
+the TUI, the CLI or the JSON encoder sees it. The original bytes are
+still legible, because a user debugging a broken skill needs to see what
+is actually in the file.
+
 ## Development
 
 ```sh
@@ -355,7 +363,7 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | Review phase | Status | What it delivered |
 |---|---|---|
 | 0 · Stop the bleeding | done | `-race` and a Go version matrix in CI, staticcheck, shellcheck, govulncheck, cross-builds, tmux smoke in CI, `LICENSE`, `--version`, a documented reason for the lipgloss pin. |
-| 1 · Security | planned | One sanitize boundary for every string that came from a skill file. |
+| 1 · Security | done | One sanitize boundary for every string that came from a skill file. |
 | 2 · Safety net | planned | Golden frames over a size table, cell-width assertions, key-driven model tests, a frontmatter fuzzer. |
 | 3 · Cheap correctness | planned | Dead code deleted, colour opt-in for `view`, `--json` contract, shared skill loading. |
 | 4 · Domain model | planned | Typed `Issue`/`Severity`, one reload path with error surfacing, the dead `Size`/`ModTime` walk removed. |

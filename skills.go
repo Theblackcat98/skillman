@@ -56,7 +56,9 @@ func ScanSkills(dir string) ([]Skill, error) {
 			continue
 		}
 		skillPath := filepath.Join(dir, name)
-		s := Skill{Name: name, Dir: skillPath}
+		// The directory name is attacker-controlled and is not YAML, so
+		// it needs the boundary treatment on its own.
+		s := Skill{Name: safeName(name), Dir: skillPath}
 		mdPath := filepath.Join(skillPath, "SKILL.md")
 		raw, err := os.ReadFile(mdPath)
 		if err != nil {
@@ -70,19 +72,20 @@ func ScanSkills(dir string) ([]Skill, error) {
 			continue
 		}
 		fm, body, ferr := parseFrontmatter(string(raw))
-		s.Body = body
+		s.Body = safeBody(body)
 		if ferr != nil {
 			// Surface parse failures instead of hiding them behind
 			// misleading "missing name/description" issues (B12).
-			s.Issues = append(s.Issues, "invalid frontmatter: "+ferr.Error())
+			s.Issues = append(s.Issues, "invalid frontmatter: "+safeText(ferr.Error()))
 		}
 		if fm.Name != "" {
 			// keep dir name as identity, but record mismatch
 			if fm.Name != name {
-				s.Issues = append(s.Issues, fmt.Sprintf("frontmatter name %q != dirname %q", fm.Name, name))
+				s.Issues = append(s.Issues, fmt.Sprintf("frontmatter name %q != dirname %q",
+					safeText(fm.Name), s.Name))
 			}
 		}
-		s.Desc = firstLine(fm.Description)
+		s.Desc = firstLine(safeBody(fm.Description))
 		if s.Desc == "" {
 			s.Desc = "(no description)"
 			s.Issues = append(s.Issues, "missing description")
@@ -90,11 +93,11 @@ func ScanSkills(dir string) ([]Skill, error) {
 		if fm.Name == "" {
 			s.Issues = append(s.Issues, "missing name")
 		}
-		s.License = fm.License
-		s.Compat = fm.Compatibility
+		s.License = safeText(fm.License)
+		s.Compat = safeText(fm.Compatibility)
 		if fm.Metadata != nil {
 			if c, ok := fm.Metadata["category"]; ok {
-				s.Category = fmt.Sprint(c)
+				s.Category = safeText(fmt.Sprint(c))
 			}
 		}
 		var total int64
