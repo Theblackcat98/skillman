@@ -382,20 +382,27 @@ func runCompletion(shell string) int {
 
 // printHelp is generated from the same keymap and exit code table that
 // the README documents, so the two cannot drift.
+// printHelp writes the help text. The usage block is generated from the
+// command table, so a command cannot be added to the binary without
+// appearing here (review D9).
 func printHelp(cfg Config) {
 	help := []string{
 		"skillman — manage opencode skills",
 		"",
 		"Usage:",
 		"  skillman                        launch TUI (TTY)",
-		"  skillman list [--json|--names|--long]   list skills",
-		"  skillman view <name> [--plain]  show skill preview",
-		"  skillman validate [--json]      validate frontmatter",
-		"  skillman delete <name> --yes    move skill to trash",
-		"  skillman trash list [--json]    list trashed skills",
-		"  skillman trash restore <name>   put a skill back",
-		"  skillman trash purge --older-than 30d | --all",
-		"  skillman completion bash|zsh    print a shell completion script",
+	}
+	for _, c := range commands {
+		line := "  skillman " + c.name
+		if c.arg != "" {
+			line += " " + c.arg
+		}
+		for _, f := range c.flags {
+			line += " [--" + strings.TrimPrefix(f, "--") + "]"
+		}
+		help = append(help, line)
+	}
+	help = append(help,
 		"",
 		"Flags:",
 		"  --plain            no colors/markdown styling (also NO_COLOR, TERM=dumb)",
@@ -403,12 +410,12 @@ func printHelp(cfg Config) {
 		"  --skills-dir DIR   override skills directory (also SKILLMAN_SKILLS, config.yaml)",
 		"  --older-than AGE   trash purge age: 30d or 720h",
 		"  --all              trash purge: remove every entry",
+		"  --yes, -y          confirm a destructive action",
 		"  -h, --help         show this help",
 		"  --version          print the version and exit",
-		"  --long             list: add category, licence, size and mtime",
 		"",
 		"Exit codes:",
-	}
+	)
 	help = append(help, exitCodeLines()...)
 	help = append(help,
 		"",
@@ -434,7 +441,7 @@ func printHelp(cfg Config) {
 		"State: "+statePath()+" (last selection, preview scroll, pane focus)",
 		"Trash: "+trashDir(),
 		"",
-		"Full documentation: README.md",
+		"Full documentation: README.md, man skillman",
 	)
 	fmt.Println(strings.Join(help, "\n"))
 }

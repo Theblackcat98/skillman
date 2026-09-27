@@ -1,0 +1,204 @@
+.\" Generated from the command tables in main.go and keymap.go.
+.\" Run: go test -run TestManPage -update
+.TH SKILLMAN 1 "2026-09-27" "skillman 0.1.0"
+.SH NAME
+skillman \- manage opencode skills
+.SH SYNOPSIS
+.B skillman
+[\fIOPTIONS\fR]
+.br
+.B skillman list
+[\fB\-\-json\fR|\fB\-\-names\fR|\fB\-\-long\fR]
+.br
+.B skillman view
+\fINAME\fR
+.br
+.B skillman validate
+[\fB\-\-json\fR]
+.br
+.B skillman delete
+\fINAME\fR \fB\-\-yes\fR
+.br
+.B skillman trash
+\fIlist|restore|purge\fR [\fB\-\-json\fR|\fB\-\-all\fR|\fB\-\-older\-than\fR \fIAGE\fR]
+.br
+.B skillman completion
+\fIbash|zsh\fR
+.br
+.B skillman install
+\fIURL\fR [\fB\-\-ref\fR \fIREF\fR]
+.SH DESCRIPTION
+Browse, preview, validate, edit and trash-delete skills in the
+opencode skills directory. With no command and a terminal it starts
+the TUI; with no command and no terminal it prints the list, so a
+pipe or a script gets text instead of an escape sequence.
+.PP
+A skill is a directory holding a SKILL.md whose YAML frontmatter
+carries at least a name and a description. A scan reads the
+frontmatter only; the markdown body is read when a skill is
+previewed or printed.
+.SH COMMANDS
+.TP
+.B list
+list skills (alias: ls)
+.TP
+.B view <name>
+show one skill (alias: show)
+.TP
+.B validate
+validate every frontmatter (alias: check)
+.TP
+.B delete <name>
+move a skill to the trash (alias: rm)
+.TP
+.B trash <list|restore|purge>
+list, restore or purge the trash
+.TP
+.B completion <bash|zsh>
+print a shell completion script
+.TP
+.B install <url>
+install a skill from a git URL
+.TP
+.B help
+print this help
+.SH OPTIONS
+.TP
+.B \-\-plain
+No colours and no markdown styling. Also set by NO_COLOR and TERM=dumb.
+.TP
+.B \-\-no\-animations
+Disable the spinner. Also set by NO_ANIMATIONS, REDUCED_MOTION and CI.
+.TP
+.B \-\-skills\-dir DIR
+Override the skills directory. Also set by SKILLMAN_SKILLS and config.yaml.
+.TP
+.B \-\-long
+list: add category, licence, size and mtime.
+.TP
+.B \-\-older\-than AGE
+trash purge: only entries older than AGE, which is 30d or 720h.
+.TP
+.B \-\-all
+trash purge: every entry. Needs \-\-yes, or the command exits 3.
+.TP
+.B \-\-yes, \-y
+Confirm a destructive action instead of asking.
+.TP
+.B \-\-help, \-h
+Print the help text and exit.
+.TP
+.B \-\-version
+Print the version and exit.
+.SH TUI KEYS
+.TP
+.B j / down
+move selection down Rebindable as down.
+.TP
+.B k / up
+move selection up Rebindable as up.
+.TP
+.B g / home
+first skill Rebindable as top.
+.TP
+.B G / end
+last skill Rebindable as bottom.
+.TP
+.B PgUp / PgDn
+page (Ctrl\-B / Ctrl\-F)
+.TP
+.B Tab / Enter
+switch pane · focus preview Rebindable as pane.
+.TP
+.B H / ?
+this help Rebindable as help.
+.TP
+.B /
+filter · esc keeps, esc esc clears Rebindable as filter.
+.TP
+.B :
+command: edit delete validate reload clear quit Rebindable as command.
+.TP
+.B e
+open SKILL.md in $EDITOR Rebindable as edit.
+.TP
+.B d
+delete to trash Rebindable as delete.
+.TP
+.B u
+undo a delete, 30s window Rebindable as undo.
+.TP
+.B v
+validate all skills Rebindable as validate.
+.TP
+.B r
+rescan the skills directory Rebindable as rescan.
+.TP
+.B q
+quit from the base layer Rebindable as quit.
+.TP
+.B Esc
+back one layer
+.SH EXIT STATUS
+.TP
+.B 0
+ok
+.TP
+.B 1
+validation issues, or skill not found
+.TP
+.B 2
+bad usage, or a skill has a broken frontmatter or no SKILL.md
+.TP
+.B 3
+destructive action refused without \-\-yes
+.TP
+.B 4
+command not built in this version
+.SH ENVIRONMENT
+.TP
+.B SKILLMAN_SKILLS
+skills directory override
+.TP
+.B XDG_CONFIG_HOME
+config.yaml and state.json live here
+.TP
+.B XDG_DATA_HOME
+trash and skillman.log live here
+.TP
+.B VISUAL
+editor to open SKILL.md with, before EDITOR
+.TP
+.B EDITOR
+editor to open SKILL.md with
+.TP
+.B NO_COLOR
+set: no colour, anywhere
+.TP
+.B SKILLMAN_COLOR
+always: colour even when piped
+.TP
+.B TERM
+dumb: no colour and no animation
+.TP
+.B NO_ANIMATIONS
+set: no spinner, no transitions
+.TP
+.B REDUCED_MOTION
+set: no spinner, no transitions
+.TP
+.B CI
+set: no spinner, no transitions
+.SH FILES
+.TP
+.B /data/data/com.termux/files/home/.config/skillman/config.yaml
+Configuration: skills_dir, accent, and key bindings.
+.TP
+.B /data/data/com.termux/files/home/.config/skillman/state.json
+Session state: last selection, preview scroll, pane focus.
+.TP
+.B /data/data/com.termux/files/home/.local/share/skillman/trash
+Deleted skills, restorable with skillman trash restore.
+.SH SEE ALSO
+The project README is the full documentation and the single source
+of truth for the tables above.

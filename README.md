@@ -281,6 +281,14 @@ a different skill while the highlighted row stays exactly where it was. A
 skill hidden by a filter keeps its selection, so clearing the filter lands
 back on the same skill; only a skill that is really gone loses it.
 
+**Four documents, one table.** The keymap, the exit codes, the
+environment variables and the subcommands are each defined once. The `?`
+overlay, `--help`, the README and `docs/skillman.1` are all generated
+from those definitions, and a test fails if any of them drifts. The man
+page is generated rather than written, because a hand-written page is one
+more copy nobody remembers to update; it is checked in so it can be read
+without building, and `go test -run TestManPage -update` rewrites it.
+
 **One layout owner.** `layout.go` turns a terminal size into the whole
 frame: pane widths, box heights, content cells and the per-row cell
 budget. Drawing and viewport sizing both read it, so they cannot
@@ -449,7 +457,7 @@ The phased plan this project was built from:
 | 10 · UI/UX polish | done | Dimmed overlays, no wasted rows, scroll position, preview banner, cell-accurate width, per-skill scroll. |
 | 11 · Config, state, trash CLI, completion | done | `config.yaml`, `state.json`, `trash list/restore/purge`, `completion bash\|zsh`. |
 | 12 · Documentation consolidation | done | This file, as the single source of truth. |
-| 13 · Man page and doc parity | planned | `docs/skillman.1` plus a parity check against this file. |
+| 13 · Man page and doc parity | done | `docs/skillman.1`, generated from the command and key tables, with a test that fails when the checked-in file drifts. |
 
 The 2026-09-27 review added a second roadmap, ordered so unblockers and
 the safety net come first. The audit labels (`A1`, `C1`, `G3`, …) refer
@@ -466,7 +474,7 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 6 · Selection state | done | The selection is a name, not an index into a list that a reload reshuffles. A filtered-out selection is remembered rather than lost, and `FilterSkills` returns a copy. |
 | 7 · CLI surface | planned | `list --long`, `--json` accepted or rejected everywhere, one load helper. |
 | 8 · Config, state, keymap | done | Landed as plan phases 11 and 12. |
-| 9 · Docs | planned | README (done), man page, parity test, stale-reference cleanup. |
+| 9 · Docs | done | README, the `?` overlay, `--help` and the man page all read one set of tables, and a test fails if any of the four drifts. |
 | 10 · Memory and scale | done | The preview render cache is bounded at 24 entries, and a scan reads only the frontmatter of each `SKILL.md` — the body is loaded when a skill is previewed or printed. |
 | 11 · Install from GitHub | planned | Landed as plan phase 5, once the reload path it depends on exists. |
 

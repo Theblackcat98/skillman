@@ -25,24 +25,92 @@ var globalFlags = map[string]bool{
 	"--skills-dir": true, "--no-animations": true, "--plain": true,
 }
 
-// commandFlags is what each command actually honours. A flag that is
-// accepted and then ignored is worse than one that is rejected: the
-// script asks for JSON, gets rendered text, and fails later somewhere
-// unrelated. So anything not listed here is an error (review A9, E15).
-var commandFlags = map[string]map[string]bool{
-	"list":       {"--json": true, "--names": true, "--long": true},
-	"view":       {},
-	"validate":   {"--json": true},
-	"delete":     {"--yes": true, "-y": true},
-	"trash":      {"--json": true, "--all": true, "--older-than": true},
-	"completion": {},
-	"install":    {"--ref": true},
+// command is one subcommand. This list is the single definition: the
+// alias table, the flag gate, --help and the man page all read it.
+//
+// The command list used to be written out four times — a flag map, an
+// alias map, a chain of || in the dispatcher, and a hand-written usage
+// block in --help. Adding a fifth copy, the man page, meant one of them
+// could go stale without a test noticing, which is what review D9 and D10
+// are about. There is one list now.
+type command struct {
+	name    string
+	aliases []string
+	// usage is the one-line summary, used by --help and the man page.
+	usage string
+	// flags are the command-specific flags it honours. A flag that is
+	// accepted and then ignored is worse than one that is rejected: the
+	// script asks for JSON, gets rendered text, and fails later somewhere
+	// unrelated (review A9, E15).
+	flags []string
+	// arg describes the positional arguments for the man page synopsis.
+	arg string
 }
 
-// aliases are the alternate spellings, mapped to the canonical command so
+// hiddenFlags are honoured but not advertised, so --help does not teach a
+// second spelling of a flag that already has one.
+var hiddenFlags = map[string][]string{
+	"delete": {"-y"},
+}
+
+var commands = []command{
+	{name: "list", aliases: []string{"ls"}, usage: "list skills",
+		flags: []string{"--json", "--names", "--long"}},
+	{name: "view", aliases: []string{"show"}, usage: "show one skill", arg: "<name>"},
+	{name: "validate", aliases: []string{"check"}, usage: "validate every frontmatter",
+		flags: []string{"--json"}},
+	{name: "delete", aliases: []string{"rm"}, usage: "move a skill to the trash",
+		flags: []string{"--yes"}, arg: "<name>"},
+	{name: "trash", usage: "list, restore or purge the trash",
+		flags: []string{"--json", "--all", "--older-than"}, arg: "<list|restore|purge>"},
+	{name: "completion", usage: "print a shell completion script", arg: "<bash|zsh>"},
+	{name: "install", usage: "install a skill from a git URL",
+		flags: []string{"--ref"}, arg: "<url>"},
+	{name: "help", usage: "print this help"},
+}
+
+// commandFlags is the flag gate, derived from commands so it cannot name
+// a flag the commands do not declare, or miss one they do.
+var commandFlags = func() map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	for _, c := range commands {
+		set := map[string]bool{}
+		for _, f := range c.flags {
+			set[f] = true
+		}
+		for _, f := range hiddenFlags[c.name] {
+			set[f] = true
+		}
+		out[c.name] = set
+	}
+	return out
+}()
+
+// commandAliases maps every name and alias to its canonical command, so
 // the flag table has one entry per command rather than one per spelling.
-var commandAliases = map[string]string{
-	"ls": "list", "show": "view", "check": "validate", "rm": "delete",
+var commandAliases = func() map[string]string {
+	out := map[string]string{}
+	for _, c := range commands {
+		out[c.name] = c.name
+		for _, a := range c.aliases {
+			out[a] = c.name
+		}
+	}
+	return out
+}()
+
+// canonicalCommand resolves a name or alias to its command.
+func canonicalCommand(name string) (command, bool) {
+	canon, ok := commandAliases[name]
+	if !ok {
+		return command{}, false
+	}
+	for _, c := range commands {
+		if c.name == canon {
+			return c, true
+		}
+	}
+	return command{}, false
 }
 
 // unsupportedFlags returns the flags that were passed but do nothing for
@@ -204,9 +272,7 @@ func run(args []string) int {
 		cmd := positional[0]
 		// A flag that is accepted and ignored is worse than one that is
 		// rejected, so check the whole command line against one table.
-		if known := cmd == "list" || cmd == "ls" || cmd == "view" || cmd == "show" ||
-			cmd == "validate" || cmd == "check" || cmd == "delete" || cmd == "rm" ||
-			cmd == "trash" || cmd == "completion" || cmd == "install" || cmd == "help"; known {
+		if _, known := canonicalCommand(cmd); known {
 			if bad := unsupportedFlags(cmd, passed); len(bad) > 0 {
 				fmt.Fprintf(os.Stderr, "%s does not take %s\n", cmd, strings.Join(bad, " or "))
 				fmt.Fprintln(os.Stderr, "run: skillman --help")
