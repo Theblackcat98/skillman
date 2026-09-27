@@ -4,14 +4,24 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  # The gate. `go.mod`'s `go` line is the minimum; `stable` is what
+  # developers actually use. Testing only the minimum hid version
+  # breakage, testing only stable hid it from users on the floor.
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.25', stable]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: ${{ matrix.go }}
       - name: vet
         run: go vet ./...
       - name: gofmt
@@ -19,4 +29,89 @@ jobs:
       - name: build
         run: mkdir -p tmp && go build -o tmp/skillman .
       - name: test
-        run: go test ./...
+        run: go test -count=1 ./...
+      # The concurrency the plain test run cannot see. A race in the
+      # timer, cache or state code would otherwise reach a release.
+      - name: test with the race detector
+        if: matrix.go == 'stable'
+        run: go test -race -count=1 ./...
+      - name: doc parity
+        if: matrix.go == 'stable'
+        run: go test -count=1 -run 'TestDocs|TestHelpSources|TestNoStale|TestReadme|TestMan' ./...
+
+  # Lint and dependency advisories. go vet misses unreachable code,
+  # unused results and formatting mistakes in printf-family calls.
+  staticcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: latest
+      - name: shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck scripts/*.sh
+
+  # Known-vulnerable dependencies. `go mod tidy -diff` proves the graph
+  # is tidy; this proves nothing in it is on an advisory list.
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: install
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: tidy is clean
+        run: go mod tidy -diff
+      - name: govulncheck
+        run: "$(go env GOPATH)/bin/govulncheck ./..."
+
+  # skillman is a terminal program, so a build failure on a platform the
+  # author never touches is invisible until someone tries it there.
+  cross-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { goos: windows, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: build
+        env:
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+          # skillman is a pure-Go binary; cgo would only pull in a host
+          # C toolchain that cannot target the matrix entry.
+          CGO_ENABLED: '0'
+        run: go build -o /dev/null .
+
+  # The TUI has no coverage from `go test`: the unit tests assert on
+  # rendered strings, but nothing drives real keystrokes through a real
+  # terminal. This is that coverage. tmux and git are preinstalled.
+  tui-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: smoke
+        run: |
+          mkdir -p tmp
+          go build -o tmp/skillman .
+          bash scripts/smoke-tmux.sh

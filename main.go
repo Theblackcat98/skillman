@@ -9,6 +9,10 @@ import (
 	"golang.org/x/term"
 )
 
+// version is the release this build reports. It is the only place a
+// version number lives, so `--version` and the man page agree.
+const version = "0.1.0"
+
 func main() {
 	os.Exit(run(os.Args[1:]))
 }
@@ -29,12 +33,15 @@ func run(args []string) int {
 	// A bare "help" is not a command: `skillman view help` must show the
 	// skill named help, not this text. --help and -h still work.
 	wantHelp := false
+	wantVersion := false
 
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch a {
 		case "-h", "--help":
 			wantHelp = true
+		case "--version":
+			wantVersion = true
 		case "--plain":
 			plainFlag = true
 		case "--no-animations":
@@ -84,6 +91,10 @@ func run(args []string) int {
 	cfg, cfgErr := loadConfig()
 	cfg.apply(skillsOverride)
 
+	if wantVersion {
+		fmt.Println("skillman " + version)
+		return 0
+	}
 	if wantHelp {
 		// The help text lists the keys actually in force, so it needs
 		// the config; it does not need to complain about a bad one.

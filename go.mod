@@ -1,12 +1,22 @@
 module skillman
 
-go 1.27.0
+// The minimum Go version CI tests against. The `go` line is that floor;
+// the `toolchain` line is what new checkouts use.
+go 1.25.0
+
+toolchain go1.27.0
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
+	// glamour v1.0.0 is a tagged release, and its own go.mod requires
+	// lipgloss at this commit. Downgrading lipgloss to the v1.1.0 tag
+	// drags glamour back to v0.9.1, which is the worse trade: lipgloss
+	// only supplies the style types, glamour does the rendering.
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
+	// Direct, not indirect: every width calculation depends on it, and
+	// counting runes instead of cells destroys the frame for CJK names.
 	github.com/mattn/go-runewidth v0.0.19
 	golang.org/x/term v0.36.0
 	gopkg.in/yaml.v3 v3.0.1

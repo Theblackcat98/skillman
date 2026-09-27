@@ -74,6 +74,7 @@ Aliases: `ls` for `list`, `show` for `view`, `check` for `validate`, `rm` for `d
 | `--older-than AGE` | `trash purge` age: `30d` or `720h`. |
 | `--all` | `trash purge`: remove every entry. |
 | `-h`, `--help` | Help, generated from the same tables as this file. |
+| `--version` | Print the version and exit. |
 
 ### TUI keys
 
@@ -269,6 +270,22 @@ or the filter query.
 and combining marks are measured in cells. Focus is always visible.
 Animation is always skippable.
 
+**Documented deviations.** Three places where this build knowingly
+differs from the baseline above, each with a reason:
+
+- `Ctrl-C` quits from every layer instead of cancelling the current
+  operation first. An app that cannot be killed is worse than one that
+  quits when the user expected a cancel.
+- `?` in filter mode types a literal `?`; the help overlay is opened from
+  normal mode only, so filtering for a question mark is possible.
+- `TERM=dumb` drops colour and animation but still uses the alt screen on
+  a real TTY. A dumb terminal can run a full-screen program; it just
+  cannot style one.
+
+`Shift-Tab` and `Ctrl-P` are unbound. The key table is in
+[keymap.go](keymap.go), and one row added there reaches the `?` overlay,
+`--help`, the man page and this file at once.
+
 ## Development
 
 ```sh
@@ -279,6 +296,11 @@ go test ./...           # required
 scripts/smoke-tmux.sh   # one real TUI session (needs the build above)
 ```
 
+CI also runs `go test -race`, `go mod tidy -diff`, `staticcheck`,
+`shellcheck`, `govulncheck`, a cross-build for windows, darwin and
+linux, and the tmux smoke script in its own job, so the TUI has
+automated interaction coverage at all.
+
 TUI changes are checked at 80×24, 50×20 and 20×10, with `NO_COLOR=1`,
 with `TERM=dumb`, and with a CJK skill name in the list. A new key, exit
 code or environment variable is added to `keymap.go` first, and the
@@ -288,8 +310,8 @@ code or environment variable is added to `keymap.go` first, and the
 
 ## Status
 
-Phases 0–12 are done. Phase 13 (man page plus a doc-parity check) is
-next. See [Roadmap](#roadmap).
+Every phase in both roadmaps below is either `done` or `planned`; there
+is no in-flight work. See [Roadmap](#roadmap).
 
 Fixed along the way, each with a regression test: the badge disappearing
 at 80 columns, the selected row vanishing at the list bottom, `Ctrl-C`
@@ -307,6 +329,8 @@ roadmap, is in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 
 ## Roadmap
 
+The phased plan this project was built from:
+
 | Phase | Status | What it delivered |
 |---|---|---|
 | 0 · Repo bootstrap | done | `.gitignore`, `AGENTS.md`, Go module. |
@@ -314,7 +338,7 @@ roadmap, is in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 2 · Scan and validate | done | Real skills, YAML frontmatter, Glamour preview, badges. |
 | 3 · Filter, palette, help, toasts | done | `/`, `:`, `?`, toasts, layer stack. |
 | 4 · Edit and delete with undo | done | `$EDITOR`, trash, 30s undo, event log. |
-| 5 · Install from GitHub | deferred | Needs the async and cancel patterns to land first. |
+| 5 · Install from GitHub | planned | `i` key, URL prompt, `git clone --depth 1`, candidate checklist. |
 | 6 · Hybrid CLI | done | `list`, `view`, `validate`, `delete`, `--help`, non-TTY fallback. |
 | 7 · Core correctness | done | Badges at 80 columns, cursor row, focus keys, `Ctrl-C`, distinct empty states, footer. |
 | 8 · Feedback and lifecycle | done | Timer generations, editor suspend, YAML errors, safe trash lifecycle. |
@@ -322,7 +346,26 @@ roadmap, is in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 10 · UI/UX polish | done | Dimmed overlays, no wasted rows, scroll position, preview banner, cell-accurate width, per-skill scroll. |
 | 11 · Config, state, trash CLI, completion | done | `config.yaml`, `state.json`, `trash list/restore/purge`, `completion bash\|zsh`. |
 | 12 · Documentation consolidation | done | This file, as the single source of truth. |
-| 13 · Man page and doc parity | next | `docs/skillman.1` plus a parity check against this file. |
+| 13 · Man page and doc parity | planned | `docs/skillman.1` plus a parity check against this file. |
+
+The 2026-09-27 review added a second roadmap, ordered so unblockers and
+the safety net come first. The audit labels (`A1`, `C1`, `G3`, …) refer
+to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
+
+| Review phase | Status | What it delivered |
+|---|---|---|
+| 0 · Stop the bleeding | done | `-race` and a Go version matrix in CI, staticcheck, shellcheck, govulncheck, cross-builds, tmux smoke in CI, `LICENSE`, `--version`, a documented reason for the lipgloss pin. |
+| 1 · Security | planned | One sanitize boundary for every string that came from a skill file. |
+| 2 · Safety net | planned | Golden frames over a size table, cell-width assertions, key-driven model tests, a frontmatter fuzzer. |
+| 3 · Cheap correctness | planned | Dead code deleted, colour opt-in for `view`, `--json` contract, shared skill loading. |
+| 4 · Domain model | planned | Typed `Issue`/`Severity`, one reload path with error surfacing, the dead `Size`/`ModTime` walk removed. |
+| 5 · Layout | planned | One layout owner for both sizing and drawing, a scrollable help overlay. |
+| 6 · Selection state | planned | Selection by name, preview cache invalidated on every reload. |
+| 7 · CLI surface | planned | `list --long`, `--json` accepted or rejected everywhere, one load helper. |
+| 8 · Config, state, keymap | done | Landed as plan phases 11 and 12. |
+| 9 · Docs | planned | README (done), man page, parity test, stale-reference cleanup. |
+| 10 · Memory and scale | planned | Bodies loaded lazily, preview cache bounded. |
+| 11 · Install from GitHub | planned | Landed as plan phase 5, once the reload path it depends on exists. |
 
 ## Out of scope
 
@@ -332,4 +375,4 @@ sort UI, an enable/disable toggle, a skill creation wizard,
 
 ## License
 
-Not yet chosen. Add one before redistributing.
+MIT. See [LICENSE](LICENSE).

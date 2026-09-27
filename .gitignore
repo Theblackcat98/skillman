@@ -9,6 +9,7 @@ dist/
 
 # Go cache and tooling
 vendor/
+node_modules/
 
 # OS / editor
 .DS_Store

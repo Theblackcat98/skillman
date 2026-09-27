@@ -339,6 +339,7 @@ func printHelp(cfg Config) {
 		"  --older-than AGE   trash purge age: 30d or 720h",
 		"  --all              trash purge: remove every entry",
 		"  -h, --help         show this help",
+		"  --version          print the version and exit",
 		"",
 		"Exit codes:",
 	}
