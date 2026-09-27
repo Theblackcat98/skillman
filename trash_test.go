@@ -8,13 +8,18 @@ import (
 	"time"
 )
 
-// isolatedEnv points skills and data dirs at throwaway locations.
+// isolatedEnv points skills, data and config dirs at throwaway
+// locations. Every test that deletes, restores, writes state or logs must
+// use it: without it a test moves real skills into the real trash and
+// writes into the real config, which is both a data-loss risk and a
+// confusing mess for the person running the suite.
 func isolatedEnv(t *testing.T) (skills, data string) {
 	t.Helper()
 	skills = t.TempDir()
 	data = t.TempDir()
 	t.Setenv("SKILLMAN_SKILLS", skills)
 	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	return skills, data
 }
 

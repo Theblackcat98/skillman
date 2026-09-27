@@ -211,8 +211,21 @@ func (m *Model) invalidatePreview() {
 	m.previewCache = map[string]string{}
 }
 
+// previewCacheLimit caps how many rendered previews are kept. Each entry
+// is a glamour render of one skill's whole body, so an unbounded cache
+// is a second copy of every skill the user has ever looked at (review
+// D2). The limit is generous: a reader who has visited far more than
+// this many skills wants the list, not the history.
+const previewCacheLimit = 24
+
 // cachedPreview returns the cached render for a skill, rendering once on
 // first visit. This keeps cursor movement at cache-lookup cost.
+//
+// When the cache is full the oldest entry is dropped. Go maps have no
+// order, so the eviction is a plain clear rather than an LRU: a full
+// rebuild costs one glamour pass over the visible skill, which is
+// cheaper than tracking insertion order for a cache this small, and
+// bounded is the property that matters.
 func (m *Model) cachedPreview(s Skill, w int) string {
 	key := s.Name + "\x00" + strconv.Itoa(w)
 	if text, ok := m.previewCache[key]; ok {
@@ -239,6 +252,9 @@ func (m *Model) cachedPreview(s Skill, w int) string {
 	head.WriteString("---\n\n")
 	text := head.String() + s.renderPreviewWith(m.sharedRenderer(w), m.plain)
 	if m.previewCache == nil {
+		m.previewCache = map[string]string{}
+	}
+	if len(m.previewCache) >= previewCacheLimit {
 		m.previewCache = map[string]string{}
 	}
 	m.previewCache[key] = text

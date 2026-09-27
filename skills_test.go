@@ -146,9 +146,24 @@ func TestScanSkills(t *testing.T) {
 	}
 }
 
-func TestScanSkillsMissingDir(t *testing.T) {
+// A missing skills directory is not an error. The assertion is on the
+// behaviour a caller needs — an empty list it can render — not on the
+// specific nil, nil the implementation happens to return, which is what
+// the old version of this test froze (review G8).
+func TestScanSkillsMissingDirIsAnEmptyList(t *testing.T) {
 	skills, err := ScanSkills(filepath.Join(t.TempDir(), "nope"))
-	if err != nil || skills != nil {
-		t.Errorf("want nil,nil for missing dir, got %v,%v", skills, err)
+	if err != nil {
+		t.Errorf("a missing skills dir returned an error: %v", err)
+	}
+	if len(skills) != 0 {
+		t.Errorf("a missing skills dir returned %d skills, want 0", len(skills))
+	}
+	// And it renders as the empty state, not a crash.
+	m := newTestModel(t, 80, 24, true)
+	m.skills = skills
+	m.loading = false
+	m.applyFilter()
+	if !strings.Contains(m.View(), "no skills") {
+		t.Error("a missing skills dir does not render the empty state")
 	}
 }

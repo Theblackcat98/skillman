@@ -1,0 +1,24 @@
+SkillMan  20/20 skills                                            ?help  /search
+   help · ?   
+  +--------------------------------------------------------------------------+  
+  |j / down     move selection down                                          |  
+  |k / up       move selection up                                            |  
+  |g / home     first skill                                                  |  
+  |G / end      last skill                                                   |  
+  |PgUp / PgDn  page (Ctrl-B / Ctrl-F)                                       |  
+  |Tab / Enter  switch pane · focus preview                                  |  
+  |H / ?        this help                                                    |  
+  |/            filter · esc keeps, esc esc clears                           |  
+  |:            command: edit delete validate reload clear quit              |  
+  |e            open SKILL.md in $EDITOR                                     |  
+  |d            delete to trash                                              |  
+  |u            undo a delete, 30s window                                    |  
+  |v            validate all skills                                          |  
+  |r            rescan the skills directory                                  |  
+  |q            quit from the base layer                                     |  
+  |Esc          back one layer                                               |  
+  |                                                                          |  
+  |Respects NO_COLOR, TERM=dumb, NO_ANIMATIONS, REDUCED_MOTION, CI.          |  
+  +--------------------------------------------------------------------------+  
+skill-04 · Test skill number 04  |  help                                        
+esc ? q close                                                                   

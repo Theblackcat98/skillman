@@ -312,9 +312,45 @@ automated interaction coverage at all.
 TUI changes are checked at 80×24, 50×20 and 20×10, with `NO_COLOR=1`,
 with `TERM=dumb`, and with a CJK skill name in the list. A new key, exit
 code or environment variable is added to `keymap.go` first, and the
-`?` overlay, `--help` and this README follow from it automatically.
+`?` overlay, `--help` and the man page follow from it automatically.
 
 `AGENTS.md` holds the working loop and the Termux notes.
+
+### Tests
+
+| File | What it covers |
+|---|---|
+| `view_test.go` | Rendered-frame invariants: width, row count, badges, the selected row, the footer, the empty states. |
+| `golden_test.go` | Byte-exact frames in `testdata/` across a size table, both colour modes, both overlays and the empty states. |
+| `update_test.go` | Key-driven model tests: every mode, the timer generations, focus routing, the confirm gate, resize. |
+| `skills_test.go` | Frontmatter parsing, filtering, scanning. |
+| `sanitize_test.go` | The untrusted-content boundary, field by field. |
+| `cli_test.go` | Exit-code contract, flag handling, trash CLI, completion. |
+| `trash_test.go` | Delete, undo, restore, purge, permissions. |
+| `config_test.go` | Config precedence, key overrides, state round-trip. |
+| `editor_test.go` | `$EDITOR` splitting, edit-path resolution. |
+| `fuzz_test.go` | Fuzz targets for the frontmatter parser, the sanitizer and the scanner. |
+| `stress_test.go` | The same three, with a seeded PRNG, for platforms where `go test -fuzz` is unavailable. |
+| `hygiene_test.go` | `TestMain` fails the suite if any test writes into the real trash, plus stdout capture. |
+| `docs_test.go`, `man_test.go` | This file and the man page against the tables in `keymap.go`. |
+
+Regenerate the golden frames after an intentional layout change:
+
+```sh
+go test -run TestGoldenFrames -update
+```
+
+Fuzz on a supported platform (`-fuzz` needs linux or darwin, not
+android/arm64):
+
+```sh
+go test -run '^$' -fuzz FuzzParseFrontmatter -fuzztime 60s
+```
+
+Any test that deletes, restores, writes state or logs must call
+`isolatedEnv(t)`, which points the skills directory, the trash and the
+config at temp directories. `TestMain` diffs the real trash around the
+whole suite and fails if it grew, so this cannot regress silently.
 
 ## Status
 
@@ -364,7 +400,7 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 |---|---|---|
 | 0 · Stop the bleeding | done | `-race` and a Go version matrix in CI, staticcheck, shellcheck, govulncheck, cross-builds, tmux smoke in CI, `LICENSE`, `--version`, a documented reason for the lipgloss pin. |
 | 1 · Security | done | One sanitize boundary for every string that came from a skill file. |
-| 2 · Safety net | planned | Golden frames over a size table, cell-width assertions, key-driven model tests, a frontmatter fuzzer. |
+| 2 · Safety net | done | Golden frames over a size table, cell-width and flush-frame assertions, key-driven model tests for `update.go`, frontmatter and sanitize fuzzers plus seeded stress runs, a bounded preview cache, an editor test set, and a trash-writing guard in `TestMain`. |
 | 3 · Cheap correctness | planned | Dead code deleted, colour opt-in for `view`, `--json` contract, shared skill loading. |
 | 4 · Domain model | planned | Typed `Issue`/`Severity`, one reload path with error surfacing, the dead `Size`/`ModTime` walk removed. |
 | 5 · Layout | planned | One layout owner for both sizing and drawing, a scrollable help overlay. |

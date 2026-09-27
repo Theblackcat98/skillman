@@ -1,0 +1,24 @@
+SkillMan  0/0 skills                                              ?help  /search
+ skills   preview 
++-------------------------------------+ +--------------------------------------+
+|  (no skills — r to rescan)          | |(no skills in /skills) — r rescans    |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
+|                                     | |                                      |
++-------------------------------------+ +--------------------------------------+
+ready  |  normal
+j/k move · / filter · : cmd · e edit · d del · u undo · ? help · q quit

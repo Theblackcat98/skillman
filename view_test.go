@@ -24,10 +24,16 @@ func makeSkills(n int) []Skill {
 }
 
 // newTestModel builds a ready-to-render model at the given size.
+//
+// The size arrives through Update(WindowSizeMsg) rather than by
+// assignment, so the clamps that clamp a tiny or huge terminal actually
+// run. Assigning m.width directly is what let the header-overflow and
+// 70-column-footer bugs hide from a suite that only tests 55 and 80
+// columns (review G2).
 func newTestModel(t *testing.T, width, height int, plain bool) Model {
 	t.Helper()
 	m := NewModel(plain, true, Config{Accent: defaultAccent})
-	m.width, m.height = width, height
+	send(t, &m, tea.WindowSizeMsg{Width: width, Height: height})
 	m.ready = true
 	m.loading = false
 	m.skills = makeSkills(20)
@@ -36,11 +42,19 @@ func newTestModel(t *testing.T, width, height int, plain bool) Model {
 	return m
 }
 
+// assertLinesFit is the width invariant, and it counts display cells
+// because runewidth is the whole point: a helper built on
+// utf8.RuneCountInString reports PASS on a frame that is 92 cells wide
+// (review G3). Valid UTF-8 is checked here too, since a frame that is
+// not valid UTF-8 is corrupt in the same way.
 func assertLinesFit(t *testing.T, view string, w int) {
 	t.Helper()
 	for i, ln := range strings.Split(view, "\n") {
-		if lipWidth(ln) > w {
-			t.Errorf("line %d overflows: %d > %d cols: %q", i+1, lipWidth(ln), w, ln)
+		if got := lipWidth(ln); got > w {
+			t.Errorf("line %d overflows: %d > %d cols: %q", i+1, got, w, ln)
+		}
+		if !utf8.ValidString(ln) {
+			t.Errorf("line %d is not valid UTF-8: %q", i+1, ln)
 		}
 	}
 }

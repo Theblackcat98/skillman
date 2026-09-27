@@ -1,0 +1,24 @@
+SkillMan  20/20 skills                                            ?help  /search
+ skills  1–18/20   preview · skill-04                                           
++-------------------------------------+ +--------------------------------------+
+|  skill-01               [ok]        | |# skill-04                            |
+|  skill-02               [ok]        | |                                      |
+|  skill-03               [warn]      | |Test skill number 04                  |
+|> skill-04               [ok]        | |                                      |
+|  skill-05               [ok]        | |---                                   |
+|  skill-06               [ok]        | |                                      |
+               confirm delete               
+              +--------------------------------------------------+              
+              |Delete skill "skill-04"?                          |              
+              |It moves to the skillman trash. `u`               |              
+              |restores it for 30s, in this session only.        |              
+              +--------------------------------------------------+              
+|  skill-13               [ok]        | |                                      |
+|  skill-14               [ok]        | |                                      |
+|  skill-15               [ok]        | |                                      |
+|  skill-16               [ok]        | |                                      |
+|  skill-17               [ok]        | |                                      |
+|  skill-18               [ok]        | |                                      |
++-------------------------------------+ +--------------------------------------+
+skill-04 · Test skill number 04  |  confirm                                     
+y confirm · n cancel                                                            

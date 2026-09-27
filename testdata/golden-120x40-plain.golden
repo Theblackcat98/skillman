@@ -1,0 +1,40 @@
+SkillMan  20/20 skills                                                                                    ?help  /search
+ skills  1–20/20   preview · skill-04 
++---------------------------------------------------------+ +----------------------------------------------------------+
+|  skill-01               [ok]                            | |# skill-04                                                |
+|  skill-02               [ok]                            | |                                                          |
+|  skill-03               [warn] analysis                 | |Test skill number 04                                      |
+|> skill-04               [ok]                            | |                                                          |
+|  skill-05               [ok]                            | |---                                                       |
+|  skill-06               [ok]                            | |                                                          |
+|  skill-07               [ok]                            | |body                                                      |
+|  skill-08               [ok]                            | |                                                          |
+|  skill-09               [ok]                            | |                                                          |
+|  skill-10               [ok]                            | |                                                          |
+|  skill-11               [ok]                            | |                                                          |
+|  skill-12               [ok]                            | |                                                          |
+|  skill-13               [ok]                            | |                                                          |
+|  skill-14               [ok]                            | |                                                          |
+|  skill-15               [ok]                            | |                                                          |
+|  skill-16               [ok]                            | |                                                          |
+|  skill-17               [ok]                            | |                                                          |
+|  skill-18               [ok]                            | |                                                          |
+|  skill-19               [ok]                            | |                                                          |
+|  skill-20               [ok]                            | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
+|                                                         | |                                                          |
++---------------------------------------------------------+ +----------------------------------------------------------+
+skill-04 · Test skill number 04  |  normal
+j/k move · / filter · : cmd · e edit · d del · u undo · ? help · q quit

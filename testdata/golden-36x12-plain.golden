@@ -1,0 +1,12 @@
+SkillMan  20/20 skills ?help  /sear…
+ skills  1–6/20 
++----------------------------------+
+|  skill-01               [ok]     |
+|  skill-02               [ok]     |
+|  skill-03               [warn]   |
+|> skill-04               [ok]     |
+|  skill-05               [ok]     |
+|  skill-06               [ok]     |
++----------------------------------+
+skill-04 · Test skill num  |  normal
+q quit
