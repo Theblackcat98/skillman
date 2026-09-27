@@ -4,15 +4,24 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
-// Open skill in $EDITOR. Caller suspends the TUI around this.
+// Open skill in $EDITOR/$VISUAL. The TUI suspends around it via
+// tea.ExecProcess (see Model.doEdit), so the alt screen is restored.
 
-func editorFor() string {
-	if v := os.Getenv("EDITOR"); v != "" {
-		return v
+// editorFor splits $VISUAL/$EDITOR into argv so flags like
+// "code -w" work; falls back to vi.
+func editorFor() []string {
+	v := os.Getenv("VISUAL")
+	if v == "" {
+		v = os.Getenv("EDITOR")
 	}
-	return "vi"
+	fields := strings.Fields(v)
+	if len(fields) == 0 {
+		return []string{"vi"}
+	}
+	return fields
 }
 
 func skillEditPath(s Skill) string {
@@ -23,11 +32,8 @@ func skillEditPath(s Skill) string {
 	return s.Dir
 }
 
-func openInEditor(path string) error {
+// editorCmd builds the command ExecProcess will suspend the TUI for.
+func editorCmd(path string) *exec.Cmd {
 	ed := editorFor()
-	cmd := exec.Command(ed, path)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return exec.Command(ed[0], append(ed[1:], path)...)
 }

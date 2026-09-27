@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,8 +69,13 @@ func ScanSkills(dir string) ([]Skill, error) {
 			out = append(out, s)
 			continue
 		}
-		fm, body := parseFrontmatter(string(raw))
+		fm, body, ferr := parseFrontmatter(string(raw))
 		s.Body = body
+		if ferr != nil {
+			// Surface parse failures instead of hiding them behind
+			// misleading "missing name/description" issues (B12).
+			s.Issues = append(s.Issues, "invalid frontmatter: "+ferr.Error())
+		}
 		if fm.Name != "" {
 			// keep dir name as identity, but record mismatch
 			if fm.Name != name {
@@ -109,10 +115,10 @@ func ScanSkills(dir string) ([]Skill, error) {
 	return out, nil
 }
 
-func parseFrontmatter(raw string) (skillFM, string) {
+func parseFrontmatter(raw string) (skillFM, string, error) {
 	var fm skillFM
 	if !strings.HasPrefix(raw, "---") {
-		return fm, raw
+		return fm, raw, nil
 	}
 	// Find closing --- on its own line.
 	lines := strings.Split(raw, "\n")
@@ -124,11 +130,13 @@ func parseFrontmatter(raw string) (skillFM, string) {
 		}
 	}
 	if end < 0 {
-		return fm, raw
+		return fm, raw, errors.New("unterminated frontmatter (missing closing ---)")
 	}
 	head := strings.Join(lines[1:end], "\n")
-	_ = yaml.Unmarshal([]byte(head), &fm)
-	return fm, strings.Join(lines[end+1:], "\n")
+	if err := yaml.Unmarshal([]byte(head), &fm); err != nil {
+		return fm, strings.Join(lines[end+1:], "\n"), err
+	}
+	return fm, strings.Join(lines[end+1:], "\n"), nil
 }
 
 func firstLine(s string) string {

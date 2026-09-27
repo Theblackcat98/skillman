@@ -42,12 +42,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.setToast(msg.text, msg.isErr)
 
 	case toastClearMsg:
-		m.toast = ""
-		m.toastErr = false
+		// Ignore clears scheduled by an older toast (B6).
+		if msg.seq == m.toastSeq {
+			m.toast = ""
+			m.toastErr = false
+		}
 		return m, nil
 
 	case undoExpireMsg:
-		m.undo = pendingUndo{}
+		// Ignore expiry from a previous delete: a newer undo window
+		// must keep its full 30s (B6).
+		if msg.seq == m.undoSeq {
+			m.undo = pendingUndo{}
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -289,22 +296,24 @@ func (m *Model) doEdit() tea.Cmd {
 		return toastCmd("nothing to edit", true)
 	}
 	path := skillEditPath(*sel)
-	c := func() tea.Msg {
-		if err := openInEditor(path); err != nil {
+	name := sel.Name
+	// ExecProcess suspends the alt screen around the editor and
+	// restores it afterwards (audit B10); $EDITOR flags are split
+	// into argv by editorCmd.
+	return tea.ExecProcess(editorCmd(path), func(err error) tea.Msg {
+		if err != nil {
 			logf("editor error: %v", err)
 			return toastMsg{text: "editor failed: " + err.Error(), isErr: true}
 		}
-		skills, err := ScanSkills(skillsDir())
-		if err != nil {
-			return toastMsg{text: "rescan failed", isErr: true}
+		// Edit is done: reload immediately and use the result, so the
+		// preview never shows stale content.
+		skills, serr := ScanSkills(skillsDir())
+		if serr != nil {
+			logf("post-edit rescan error: %v", serr)
+			return toastMsg{text: "edited " + name + " — rescan failed", isErr: true}
 		}
-		_ = skills
-		return toastMsg{text: "edited " + sel.Name + " — press r to rescan", isErr: false}
-	}
-	// NOTE: bubbletea suspends via ExecCommand; here we run editor
-	// synchronously — main.go wraps TUI with alt-screen restore so the
-	// terminal is usable. Rescan happens on next keypress or r.
-	return c
+		return skillsLoadedMsg{skills: skills}
+	})
 }
 
 func (m *Model) doDelete() tea.Cmd {
@@ -327,9 +336,11 @@ func (m *Model) doDelete() tea.Cmd {
 	m.skills = skills
 	m.applyFilter()
 	m.refreshPreview()
+	m.undoSeq++
+	seq := m.undoSeq
 	cmds := []tea.Cmd{
 		m.setToast(fmt.Sprintf("deleted %s — u to undo", name), false),
-		tea.Tick(30*time.Second, func(time.Time) tea.Msg { return undoExpireMsg{} }),
+		tea.Tick(30*time.Second, func(time.Time) tea.Msg { return undoExpireMsg{seq: seq} }),
 	}
 	return tea.Batch(cmds...)
 }

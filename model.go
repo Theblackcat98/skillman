@@ -31,9 +31,9 @@ type toastMsg struct {
 	isErr bool
 }
 
-type toastClearMsg struct{}
+type toastClearMsg struct{ seq int }
 
-type undoExpireMsg struct{}
+type undoExpireMsg struct{ seq int }
 
 func loadSkillsCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -83,6 +83,8 @@ type Model struct {
 
 	toast      string
 	toastErr   bool
+	toastSeq   int // generation tokens so stale timers can't clear
+	undoSeq    int // fresher state (audit B6)
 	errMsg     string
 	confirmIdx int
 
@@ -221,8 +223,12 @@ func (m *Model) previewWidth() int {
 func (m *Model) setToast(text string, isErr bool) tea.Cmd {
 	m.toast = text
 	m.toastErr = isErr
+	m.toastSeq++
+	seq := m.toastSeq
+	// Always schedule dismissal — including with animations off,
+	// where the old early-return left success toasts stuck forever (B5).
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
-		return toastClearMsg{}
+		return toastClearMsg{seq: seq}
 	})
 }
 

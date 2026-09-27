@@ -91,7 +91,7 @@ Hygiene gaps:
 - Fixes: priority row layout (name + badge always fit; category drops when narrow — kills B1); align list rows with `box` content lines (B2); route nav keys to the viewport while preview is focused and stop firing list-only keys there (B3); global Ctrl-C check before mode dispatch (B4); distinct empty-dir vs no-match states with `Esc` hint (B7); bare `--json` ⇒ `list --json` on TTY (B8); compact context-aware footer so `? help · q quit` fits 80 cols (B9); status/query copy fixes (B15).
 - Check: tmux 80×24 — badge visible on every row; `G` shows `>` on the last row; Tab+j scrolls preview only; Ctrl-C quits from filter, command, help, and confirm; `/nomatch` shows match-hint state; `--json` prints JSON on a TTY; footer ends with `q quit`.
 
-## Phase 8 — Feedback + lifecycle hardening (B5, B6, B10, B12–B14)
+## Phase 8 — Feedback + lifecycle hardening (B5, B6, B10, B12–B14) ✅
 - Goal: timers are reliable; editor, YAML, and trash flows can't corrupt or lie.
 - Files: `model.go`, `update.go`, `editor.go`, `trash.go`, `skills.go`.
 - Fixes: always schedule toast dismissal (drop the `noAnim` early-return) and add generation tokens to toast/undo timers (B5/B6); editor via `tea.ExecProcess` with alt-screen suspend + `$EDITOR` arg splitting + rescan after edit using the result (B10); surface YAML parse errors as an issue (B12); trash: unique dest name incl. pid, copy+remove fallback for cross-device moves (B13); undo restores to original name when free instead of `<name>-restored` (B14).
