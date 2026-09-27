@@ -56,7 +56,7 @@ func goldenModel(t *testing.T, w, h int) Model {
 	m.skills[2].Issues = []Issue{{Code: "test", Msg: "frontmatter name \"skill-03\" != dirname \"other\"", Sev: SevWarn}}
 	m.skills[5].Desc = "A deliberately long description that has to be cut down to whatever the status bar can afford"
 	m.applyFilter()
-	m.cursor = 3
+	m.selectAt(3)
 	m.refreshPreview()
 	return m
 }

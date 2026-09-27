@@ -112,19 +112,13 @@ func (m *Model) restoreState(s State) {
 	m.pendingSelection = s.LastSelection
 }
 
-// applySelection moves the cursor to the skill named in the saved state.
-// A name that no longer exists is ignored: state is a convenience, never
-// a reason to fail.
+// applySelection moves the cursor to the skill named in the saved state or
+// in an undo. A name that no longer exists is ignored: state is a
+// convenience, never a reason to fail.
 func (m *Model) applySelection() {
 	if m.pendingSelection == "" {
 		return
 	}
-	for i, s := range m.filtered {
-		if s.Name == m.pendingSelection {
-			m.cursor = i
-			m.pendingSelection = ""
-			return
-		}
-	}
+	m.selectName(m.pendingSelection)
 	m.pendingSelection = ""
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -229,9 +230,12 @@ func (s Skill) metaLine() string {
 func FilterSkills(skills []Skill, query string) []Skill {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
-		return skills
+		// A copy, not the caller's slice. The model hands this straight
+		// to its own field, so returning the original let a later change
+		// to one write through to the full skill list (review F6).
+		return slices.Clone(skills)
 	}
-	var out []Skill
+	out := make([]Skill, 0, len(skills))
 	for _, s := range skills {
 		hay := strings.ToLower(s.Name + " " + s.Desc + " " + s.Category)
 		if strings.Contains(hay, q) {

@@ -91,9 +91,10 @@ func (m Model) renderListBox(w, h int) string {
 	// h - 2 made the selected row unrenderable at the bottom edge (B2).
 	vis := contentH(h)
 	row := m.layout().row
+	cur := m.cursorIndex()
 	start := 0
-	if m.cursor >= vis {
-		start = m.cursor - vis + 1
+	if cur >= vis {
+		start = cur - vis + 1
 	}
 	end := start + vis
 	if end > len(m.filtered) {
@@ -119,7 +120,7 @@ func (m Model) renderListBox(w, h int) string {
 		}
 	} else {
 		for i := start; i < end; i++ {
-			rows = append(rows, m.renderRow(i, row))
+			rows = append(rows, m.renderRow(i, cur, row))
 		}
 	}
 	for len(rows) < vis {
@@ -132,11 +133,11 @@ func (m Model) renderListBox(w, h int) string {
 // renderRow draws one skill row from the frame's row plan. It does no
 // width arithmetic: the budget was resolved once in planRow, so every row
 // in a frame lines up and no row can overflow its pane (review F3).
-func (m Model) renderRow(i int, r rowPlan) string {
+func (m Model) renderRow(i, cur int, r rowPlan) string {
 	s := m.filtered[i]
 	level := s.Severity()
 	marker := "  "
-	if i == m.cursor {
+	if i == cur {
 		marker = "> "
 	}
 	// Priority: marker, then name, then severity, then category. The old
@@ -151,7 +152,7 @@ func (m Model) renderRow(i int, r rowPlan) string {
 	}
 	w := r.inner
 	line = truncate(line, w)
-	if i != m.cursor {
+	if i != cur {
 		if m.plain {
 			return line
 		}

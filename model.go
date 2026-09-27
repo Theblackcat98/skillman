@@ -107,8 +107,13 @@ type Model struct {
 
 	skills   []Skill
 	filtered []Skill
-	cursor   int
-	query    string
+	// selName is the selection. It is a name, not an index into filtered,
+	// because an index is a position in a list that a reload, a filter
+	// change or a delete reshuffles underneath the user: the row stayed
+	// the same and the skill under it silently changed (review F7).
+	// Nothing owns an index; cursorIndex derives one for drawing.
+	selName string
+	query   string
 
 	preview viewport.Model
 	// helpVP scrolls the ? overlay. The keymap is taller than a short
@@ -180,23 +185,112 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// selected is the skill under the cursor, or nil on an empty list.
 func (m *Model) selected() *Skill {
-	if len(m.filtered) == 0 || m.cursor < 0 || m.cursor >= len(m.filtered) {
+	i := m.cursorIndex()
+	if i < 0 || i >= len(m.filtered) {
 		return nil
 	}
-	return &m.filtered[m.cursor]
+	return &m.filtered[i]
+}
+
+// cursorIndex derives the selection's position in the filtered list. It is
+// -1 when the selected name is not in the current view, which is the
+// normal state while a filter hides it.
+func (m Model) cursorIndex() int {
+	if m.selName == "" {
+		if len(m.filtered) > 0 {
+			return 0
+		}
+		return -1
+	}
+	for i := range m.filtered {
+		if m.filtered[i].Name == m.selName {
+			return i
+		}
+	}
+	// Not visible. Fall back to the first row so the list always has a
+	// cursor, but do not change the stored name: a filter the user is
+	// about to clear should not lose the selection.
+	if len(m.filtered) > 0 {
+		return 0
+	}
+	return -1
+}
+
+// selectAt moves the cursor to a position, clamped to the list.
+func (m *Model) selectAt(i int) {
+	if len(m.filtered) == 0 {
+		m.selName = ""
+		m.refreshPreview()
+		return
+	}
+	if i < 0 {
+		i = 0
+	}
+	if i >= len(m.filtered) {
+		i = len(m.filtered) - 1
+	}
+	m.selName = m.filtered[i].Name
+	m.refreshPreview()
+}
+
+func (m *Model) selectLast() { m.selectAt(len(m.filtered) - 1) }
+
+// selectName selects by name, and reports whether the name was in the
+// list. Used to restore a saved session and an undone delete.
+func (m *Model) selectName(name string) bool {
+	for i := range m.filtered {
+		if m.filtered[i].Name == name {
+			m.selName = name
+			m.refreshPreview()
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) applyFilter() {
+	// FilterSkills returns a copy, so a later mutation of m.filtered can
+	// never scribble on m.skills (review F6).
 	m.filtered = FilterSkills(m.skills, m.query)
-	if m.cursor >= len(m.filtered) {
-		m.cursor = len(m.filtered) - 1
+	// Keep the selection if it survived the filter. A skill that is only
+	// hidden is not the same as one that is gone: the user is one Esc
+	// away from clearing the filter and must land back on the same skill.
+	// So the name is kept while it still exists anywhere, and dropped only
+	// when the skill is really gone.
+	if m.selName != "" && !m.nameExists() {
+		m.selName = ""
 	}
-	if m.cursor < 0 {
-		m.cursor = 0
+	if m.selName == "" && len(m.filtered) > 0 {
+		m.selName = m.filtered[0].Name
 	}
 	m.applySelection()
 	m.refreshPreview()
+}
+
+// nameVisible reports whether the selection is in the current filter.
+func (m *Model) nameVisible() bool {
+	for i := range m.filtered {
+		if m.filtered[i].Name == m.selName {
+			return true
+		}
+	}
+	return false
+}
+
+// nameExists reports whether the selection is still a skill on disk,
+// whether or not the current filter shows it.
+func (m *Model) nameExists() bool {
+	if m.selName == "" {
+		return false
+	}
+	for i := range m.skills {
+		if m.skills[i].Name == m.selName {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) refreshPreview() {

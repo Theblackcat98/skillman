@@ -85,7 +85,7 @@ func TestBadgeVisibleAt80(t *testing.T) {
 // Regression: audit B2 — selected row must render at the bottom edge.
 func TestCursorRowVisibleAtBottom(t *testing.T) {
 	m := newTestModel(t, 80, 24, false)
-	m.cursor = len(m.filtered) - 1
+	m.selectLast()
 	m.refreshPreview()
 	view := m.View()
 	if !strings.Contains(view, "> skill-20") {
@@ -188,7 +188,7 @@ func TestFrameFillsTerminal(t *testing.T) {
 	for _, sz := range sizes {
 		for _, plain := range []bool{false, true} {
 			m := newTestModel(t, sz[0], sz[1], plain)
-			m.cursor = 6
+			m.selectAt(6)
 			m.refreshPreview()
 			lines := strings.Split(m.View(), "\n")
 			if len(lines) != sz[1] {
@@ -227,12 +227,12 @@ func TestFooterKeepsQuitHint(t *testing.T) {
 // Phase 10: the list title carries the scroll position.
 func TestListTitleShowsPosition(t *testing.T) {
 	m := newTestModel(t, 80, 24, false)
-	m.cursor = 0
+	m.selectAt(0)
 	m.applyFilter()
 	if got := strings.Split(m.View(), "\n")[1]; !strings.Contains(got, "1–18/20") {
 		t.Errorf("list title missing scroll position: %q", got)
 	}
-	m.cursor = 19
+	m.selectAt(19)
 	m.refreshPreview()
 	// 18 rows fit, so the last 18 of 20 are shown: 3–20.
 	if got := strings.Split(m.View(), "\n")[1]; !strings.Contains(got, "3–20/20") {
@@ -506,7 +506,7 @@ func TestRowsStayIdentifiableWhenNarrow(t *testing.T) {
 	m := newTestModel(t, 20, 10, true)
 	seen := map[string]bool{}
 	for i := 0; i < len(m.filtered) && i < 8; i++ {
-		row := stripANSI(m.renderRow(i, m.layout().row))
+		row := stripANSI(m.renderRow(i, m.cursorIndex(), m.layout().row))
 		if lipWidth(row) > m.layout().listInner {
 			t.Errorf("row %d is %d cells, pane interior is %d: %q",
 				i, lipWidth(row), m.layout().listInner, row)

@@ -281,17 +281,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.move(-1)
 	case "g":
-		m.cursor = 0
-		m.refreshPreview()
+		m.selectAt(0)
 	case "G", "end":
-		m.cursor = len(m.filtered) - 1
-		if m.cursor < 0 {
-			m.cursor = 0
-		}
-		m.refreshPreview()
+		m.selectLast()
 	case "home":
-		m.cursor = 0
-		m.refreshPreview()
+		m.selectAt(0)
 	case "pgdown", "ctrl+f":
 		m.move(10)
 	case "pgup", "ctrl+b":
@@ -350,14 +344,7 @@ func (m *Model) move(d int) {
 	if len(m.filtered) == 0 {
 		return
 	}
-	m.cursor += d
-	if m.cursor < 0 {
-		m.cursor = 0
-	}
-	if m.cursor >= len(m.filtered) {
-		m.cursor = len(m.filtered) - 1
-	}
-	m.refreshPreview()
+	m.selectAt(m.cursorIndex() + d)
 }
 
 func (m *Model) doEdit() tea.Cmd {
@@ -464,6 +451,9 @@ func (m *Model) doUndo() tea.Cmd {
 		return toastCmd("undo failed: "+err.Error(), true)
 	}
 	m.undo = pendingUndo{}
+	// The restored skill may not be back yet; applySelection picks it up
+	// once the reload lands, which is why this no longer walks the list
+	// by hand looking for a name that is not there (review F7).
 	m.pendingSelection = name
 	m.invalidatePreview()
 	return m.reloadCmd("restored " + name)

@@ -290,22 +290,22 @@ func TestPreviewFocusRoutesNavToViewport(t *testing.T) {
 	if !m.focusPreview {
 		t.Fatal("tab did not focus the preview")
 	}
-	listCursor := m.cursor
+	listCursor := m.cursorIndex()
 	send(t, &m, keyPress('j'))
 	send(t, &m, keyPress('j'))
 	if m.preview.YOffset == 0 {
 		t.Error("j did not scroll the preview")
 	}
-	if m.cursor != listCursor {
-		t.Errorf("j moved the list cursor %d -> %d with the preview focused", listCursor, m.cursor)
+	if m.cursorIndex() != listCursor {
+		t.Errorf("j moved the list cursor %d -> %d with the preview focused", listCursor, m.cursorIndex())
 	}
 	// g/G jump within the body, not within the list.
 	send(t, &m, keyPress('G'))
 	if !m.preview.AtBottom() {
 		t.Error("G did not reach the end of the body")
 	}
-	if m.cursor != listCursor {
-		t.Errorf("G moved the list cursor to %d", m.cursor)
+	if m.cursorIndex() != listCursor {
+		t.Errorf("G moved the list cursor to %d", m.cursorIndex())
 	}
 }
 
@@ -422,45 +422,45 @@ func TestNavigationKeys(t *testing.T) {
 	n := len(m.filtered)
 
 	send(t, &m, keyPress('G'))
-	if m.cursor != n-1 {
-		t.Errorf("G put the cursor at %d, want %d", m.cursor, n-1)
+	if m.cursorIndex() != n-1 {
+		t.Errorf("G put the cursor at %d, want %d", m.cursorIndex(), n-1)
 	}
 	send(t, &m, keyPress('g'))
-	if m.cursor != 0 {
-		t.Errorf("g put the cursor at %d, want 0", m.cursor)
+	if m.cursorIndex() != 0 {
+		t.Errorf("g put the cursor at %d, want 0", m.cursorIndex())
 	}
 	send(t, &m, tea.KeyMsg{Type: tea.KeyEnd})
-	if m.cursor != n-1 {
-		t.Errorf("end put the cursor at %d, want %d", m.cursor, n-1)
+	if m.cursorIndex() != n-1 {
+		t.Errorf("end put the cursor at %d, want %d", m.cursorIndex(), n-1)
 	}
 	send(t, &m, tea.KeyMsg{Type: tea.KeyHome})
-	if m.cursor != 0 {
-		t.Errorf("home put the cursor at %d, want 0", m.cursor)
+	if m.cursorIndex() != 0 {
+		t.Errorf("home put the cursor at %d, want 0", m.cursorIndex())
 	}
 	send(t, &m, keyPress('j'))
-	if m.cursor != 1 {
-		t.Errorf("j put the cursor at %d, want 1", m.cursor)
+	if m.cursorIndex() != 1 {
+		t.Errorf("j put the cursor at %d, want 1", m.cursorIndex())
 	}
 	// Past the end: clamped, not wrapped, and the frame does not panic.
 	for i := 0; i < n+30; i++ {
 		send(t, &m, keyPress('j'))
 	}
-	if m.cursor != n-1 {
-		t.Errorf("j past the end put the cursor at %d, want %d", m.cursor, n-1)
+	if m.cursorIndex() != n-1 {
+		t.Errorf("j past the end put the cursor at %d, want %d", m.cursorIndex(), n-1)
 	}
 	for i := 0; i < n+30; i++ {
 		send(t, &m, keyPress('k'))
 	}
-	if m.cursor != 0 {
-		t.Errorf("k past the start put the cursor at %d, want 0", m.cursor)
+	if m.cursorIndex() != 0 {
+		t.Errorf("k past the start put the cursor at %d, want 0", m.cursorIndex())
 	}
 	send(t, &m, tea.KeyMsg{Type: tea.KeyPgDown})
-	if m.cursor != 10 {
-		t.Errorf("pgdown put the cursor at %d, want 10", m.cursor)
+	if m.cursorIndex() != 10 {
+		t.Errorf("pgdown put the cursor at %d, want 10", m.cursorIndex())
 	}
 	send(t, &m, tea.KeyMsg{Type: tea.KeyPgUp})
-	if m.cursor != 0 {
-		t.Errorf("pgup put the cursor at %d, want 0", m.cursor)
+	if m.cursorIndex() != 0 {
+		t.Errorf("pgup put the cursor at %d, want 0", m.cursorIndex())
 	}
 }
 
@@ -478,8 +478,10 @@ func TestNavigationOnEmptyList(t *testing.T) {
 		tea.KeyMsg{Type: tea.KeyPgDown}, tea.KeyMsg{Type: tea.KeyPgUp}} {
 		send(t, &m, k)
 	}
-	if m.cursor != 0 {
-		t.Errorf("cursor = %d on an empty list, want 0", m.cursor)
+	// -1 means "no row": the old index stayed 0, which pointed at
+	// nothing and read as a real position to every caller.
+	if m.cursorIndex() != -1 {
+		t.Errorf("cursorIndex = %d on an empty list, want -1 (no row)", m.cursorIndex())
 	}
 	if m.selected() != nil {
 		t.Error("selected() returned a skill on an empty list")
@@ -555,14 +557,14 @@ func TestResizeClampsAndRelaysOut(t *testing.T) {
 
 func TestSkillsLoadedReplacesTheList(t *testing.T) {
 	m := newTestModel(t, 80, 24, true)
-	m.cursor = 5
+	m.selectAt(5)
 	// A reload with a different set must move the list, not append to it.
 	send(t, &m, skillsLoadedMsg{skills: makeSkills(3)})
 	if len(m.skills) != 3 {
 		t.Errorf("reload left %d skills, want 3", len(m.skills))
 	}
-	if m.cursor >= len(m.skills) {
-		t.Errorf("cursor %d is out of range after a shrinking reload", m.cursor)
+	if m.cursorIndex() >= len(m.skills) {
+		t.Errorf("cursor %d is out of range after a shrinking reload", m.cursorIndex())
 	}
 }
 
@@ -884,5 +886,129 @@ func TestEditOnExistingFileGoesStraightToTheEditor(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("e on an existing file produced no command")
+	}
+}
+
+// The selection was an index into the filtered list, so anything that
+// rebuilt the list moved the cursor onto a different skill while the
+// highlighted row stayed put. Selection is a name now (review F7).
+func TestSelectionSurvivesAReorder(t *testing.T) {
+	m := newTestModel(t, 80, 24, true)
+	m.skills = fixtureSkills(t, 6)
+	m.applyFilter()
+	m.selectName("skill-03")
+	if got := m.selected().Name; got != "skill-03" {
+		t.Fatalf("setup: selected %q", got)
+	}
+
+	// A reload that renames skill-01 to skill-99, deleting skill-05 and
+	// appending a new skill. Every index below 3 shifts.
+	next := []Skill{
+		m.skills[1], m.skills[2], m.skills[3], m.skills[5],
+		{Name: "skill-99", Desc: "renamed", Dir: "/tmp/skill-99"},
+	}
+	mm, _ := m.Update(skillsLoadedMsg{skills: next})
+	m = mm.(Model)
+
+	if got := m.selected().Name; got != "skill-03" {
+		t.Errorf("after a reorder the selection is %q, want skill-03 (index %d)",
+			got, m.cursorIndex())
+	}
+	// The highlighted row is the selected skill, not just row 3.
+	frame := m.View()
+	if !strings.Contains(frame, "> skill-03") {
+		t.Errorf("the marker is not on the selected skill:\n%s", frame)
+	}
+}
+
+// A filter that hides the selection must not lose it: the user is about
+// to clear the filter and should land back where they were.
+func TestFilterDoesNotLoseTheSelection(t *testing.T) {
+	m := newTestModel(t, 80, 24, true)
+	m.skills = fixtureSkills(t, 8)
+	m.applyFilter()
+	m.selectName("skill-06")
+
+	m.query = "skill-0"
+	m.applyFilter()
+	if got := m.selected().Name; got != "skill-06" {
+		t.Errorf("with a matching filter the selection became %q", got)
+	}
+
+	// A filter that matches nothing cannot keep it visible, but the
+	// stored name must survive so clearing the filter restores it.
+	m.query = "zzz-no-match"
+	m.applyFilter()
+	if len(m.filtered) != 0 {
+		t.Fatalf("setup: the filter should match nothing, got %d", len(m.filtered))
+	}
+	if m.selected() != nil {
+		t.Errorf("an empty result selected %q", m.selected().Name)
+	}
+	m.query = ""
+	m.applyFilter()
+	if got := m.selected().Name; got != "skill-06" {
+		t.Errorf("clearing the filter selected %q, want the remembered skill-06", got)
+	}
+}
+
+// FilterSkills must not hand back the caller's slice. The model stores the
+// result directly, so returning the original let any later change write
+// through to the full list (review F6).
+func TestFilterSkillsNeverAliasesItsInput(t *testing.T) {
+	in := []Skill{{Name: "a", Desc: "one"}, {Name: "b", Desc: "two"}}
+	out := FilterSkills(in, "")
+	if &out[0] == &in[0] {
+		t.Fatal("FilterSkills returned the caller's own slice")
+	}
+	out[0].Name = "mutated"
+	if in[0].Name != "a" {
+		t.Errorf("writing to the result changed the input: %q", in[0].Name)
+	}
+	// Appending must not grow into the caller's array either.
+	out = append(out, Skill{Name: "c"})
+	if len(in) != 2 {
+		t.Errorf("appending to the result changed the input length to %d", len(in))
+	}
+	// And a real filter result is independent too.
+	out = FilterSkills(in, "a")
+	out[0].Desc = "mutated"
+	if in[0].Desc != "one" {
+		t.Errorf("a filtered result aliases the input: %q", in[0].Desc)
+	}
+}
+
+// An undone delete has to put the cursor back on the skill that came back,
+// which now happens through the saved name rather than a hand-written
+// walk over the list.
+func TestUndoSelectsTheRestoredSkill(t *testing.T) {
+	dir, _ := isolatedEnv(t)
+	for i := 1; i <= 4; i++ {
+		writeSkill(t, dir, "skill-0"+string(rune('0'+i)), validFM("skill-0"+string(rune('0'+i)), "d"))
+	}
+	m := newTestModel(t, 80, 24, true)
+	mm, _ := m.Update(skillsLoadedMsg{skills: mustScan(t, dir)})
+	m = mm.(Model)
+	m.selectName("skill-03")
+	if len(m.filtered) != 4 {
+		t.Fatalf("setup: %d skills, want 4", len(m.filtered))
+	}
+
+	_ = m.doDelete()
+	if m.undo.Name != "skill-03" {
+		t.Fatalf("undo armed for %q", m.undo.Name)
+	}
+	// The reload that brings it back.
+	mm, _ = m.Update(skillsLoadedMsg{skills: mustScan(t, dir)})
+	m = mm.(Model)
+	_ = m.doUndo()
+	mm, _ = m.Update(skillsLoadedMsg{skills: mustScan(t, dir)})
+	m = mm.(Model)
+
+	if got := m.selected().Name; got != "skill-03" {
+		t.Errorf("after undo the selection is %q, want the restored skill-03", got)
+	}
+	if len(m.filtered) != 4 {
+		t.Errorf("after undo there are %d skills, want 4", len(m.filtered))
 	}
 }

@@ -254,6 +254,12 @@ stable `Code` and a `Severity`. The badge, the row colour, the
 message can never change an exit code. A malformed frontmatter is one
 error, not three warnings about a file nothing can read.
 
+**The selection is a name.** Nothing stores a row index. A reload, a
+filter change or a delete reshuffles the list, and an index then points at
+a different skill while the highlighted row stays exactly where it was. A
+skill hidden by a filter keeps its selection, so clearing the filter lands
+back on the same skill; only a skill that is really gone loses it.
+
 **One layout owner.** `layout.go` turns a terminal size into the whole
 frame: pane widths, box heights, content cells and the per-row cell
 budget. Drawing and viewport sizing both read it, so they cannot
@@ -436,7 +442,7 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 3 · Cheap correctness | done | Dead code deleted, `--long` surfacing size and mtime, plain-by-default output with a colour opt-in, a one-table flag contract that rejects unsupported flags, `--` for flag-shaped skill names, and a create-confirmation before `e` writes a missing `SKILL.md`. |
 | 4 · Domain model | done | Typed `Issue`/`Severity` with stable codes, one reload path used by every operation, malformed frontmatter reported as one error instead of three warnings. |
 | 5 · Layout | done | `layout.go` owns all frame geometry, so drawing and sizing read the same numbers. The `?` overlay scrolls and reports its range. Rows keep the name legible at 20 columns by dropping the severity word for a one-cell mark. |
-| 6 · Selection state | planned | Selection by name, preview cache invalidated on every reload. |
+| 6 · Selection state | done | The selection is a name, not an index into a list that a reload reshuffles. A filtered-out selection is remembered rather than lost, and `FilterSkills` returns a copy. |
 | 7 · CLI surface | planned | `list --long`, `--json` accepted or rejected everywhere, one load helper. |
 | 8 · Config, state, keymap | done | Landed as plan phases 11 and 12. |
 | 9 · Docs | planned | README (done), man page, parity test, stale-reference cleanup. |
