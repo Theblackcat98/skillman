@@ -196,8 +196,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Normal mode.
-	switch key {
+	// Normal mode. A config keybinding override is translated to the
+	// built-in key for that action first, so the switch below stays the
+	// only place that says what an action does.
+	switch m.cfg.resolveKey(key) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "?", "H":

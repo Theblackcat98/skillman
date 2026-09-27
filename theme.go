@@ -22,7 +22,10 @@ type Theme struct {
 	Toast    lipgloss.Style
 }
 
-func NewTheme(plain bool) Theme {
+func NewTheme(plain bool, accentHex string) Theme {
+	if accentHex == "" {
+		accentHex = defaultAccent
+	}
 	if plain {
 		b := lipgloss.NewStyle().Bold(true)
 		n := lipgloss.NewStyle()
@@ -33,9 +36,11 @@ func NewTheme(plain bool) Theme {
 			Success: b, Status: n, Footer: d, Toast: b,
 		}
 	}
-	accent := lipgloss.Color("#7C6CFF")
+	accent := lipgloss.Color(accentHex)
+	// The title is the accent, so a custom accent themes the whole UI
+	// instead of leaving a purple title on a green theme.
 	return Theme{
-		Title:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#C4B5FD")),
+		Title:    lipgloss.NewStyle().Bold(true).Foreground(accent),
 		Accent:   lipgloss.NewStyle().Bold(true).Foreground(accent),
 		Selected: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1A1B26")).Background(accent),
 		Dim:      lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")),

@@ -61,6 +61,7 @@ func toastCmd(text string, isErr bool) tea.Cmd {
 
 type Model struct {
 	theme   Theme
+	cfg     Config
 	plain   bool
 	noAnim  bool
 	width   int
@@ -91,6 +92,12 @@ type Model struct {
 
 	undo pendingUndo
 
+	// Per-skill preview scroll, so moving the list cursor does not throw
+	// away where the reader was, and the positions survive a restart.
+	scroll           map[string]int
+	previewName      string
+	pendingSelection string
+
 	// Preview render cache: key is skill name + wrap width. Rebuilding a
 	// glamour renderer and re-rendering markdown on every keypress was the
 	// main source of j/k lag, so renders are cached and the renderer reused.
@@ -99,8 +106,8 @@ type Model struct {
 	glam          *glamour.TermRenderer
 }
 
-func NewModel(plain, noAnim bool) Model {
-	th := NewTheme(plain)
+func NewModel(plain, noAnim bool, cfg Config) Model {
+	th := NewTheme(plain, cfg.Accent)
 	ti := textinput.New()
 	ti.Prompt = "/"
 	ti.Placeholder = "filter skills"
@@ -117,11 +124,12 @@ func NewModel(plain, noAnim bool) Model {
 	vp := viewport.New(40, 10)
 
 	return Model{
-		theme: th, plain: plain, noAnim: noAnim,
+		theme: th, cfg: cfg, plain: plain, noAnim: noAnim,
 		loading: true,
 		preview: vp, filter: ti, cmdline: ci, spinner: sp,
 		width: 80, height: 24,
 		previewCache: map[string]string{},
+		scroll:       map[string]int{},
 	}
 }
 
@@ -148,6 +156,7 @@ func (m *Model) applyFilter() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+	m.applySelection()
 	m.refreshPreview()
 }
 
@@ -160,6 +169,15 @@ func (m *Model) refreshPreview() {
 // a resize never throws away the reader's position.
 func (m *Model) refreshPreviewAt(reset bool) {
 	sel := m.selected()
+	name := ""
+	if sel != nil {
+		name = sel.Name
+	}
+	// Remember where the outgoing skill was read to, so returning to it
+	// later resumes in the same place.
+	if m.previewName != "" && m.previewName != name {
+		m.scroll[m.previewName] = m.preview.YOffset
+	}
 	w := m.previewWidth()
 	if sel == nil {
 		switch {
@@ -172,12 +190,19 @@ func (m *Model) refreshPreviewAt(reset bool) {
 			m.preview.SetContent("(no match for /" + m.query + ") — esc clears the filter")
 		}
 		m.preview.GotoTop()
+		m.previewName = ""
 		return
 	}
 	m.preview.SetContent(m.cachedPreview(*sel, w))
-	if reset {
+	switch {
+	case !reset && m.previewName == name:
+		// Same skill, new size: keep the reader in place.
+	case m.scroll[name] > 0:
+		m.preview.SetYOffset(m.scroll[name])
+	default:
 		m.preview.GotoTop()
 	}
+	m.previewName = name
 }
 
 // invalidatePreview drops cached renders. Called on every rescan so edits,

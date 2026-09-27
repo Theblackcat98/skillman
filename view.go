@@ -295,24 +295,37 @@ func (m Model) renderFooter() string {
 	return m.theme.Footer.Render(hints)
 }
 
-// helpLines is the canonical TUI key table. It is rendered verbatim in
-// the ? overlay, so keep every line under 60 cells.
-var helpLines = []string{
-	"j/k, up/down  move selection",
-	"g / G         top / bottom",
-	"PgUp/PgDn     page (Ctrl-B / Ctrl-F)",
-	"Tab / Enter   switch pane · focus preview",
-	"H / ?         this help",
-	"/             filter · esc keeps, esc esc clears",
-	":             command: edit delete validate",
-	"              reload clear quit help filter <query>",
-	"e             open SKILL.md in $EDITOR",
-	"d / u         delete to trash / undo (30s)",
-	"v / r         validate all / rescan",
-	"Esc           back one layer · q quits",
-	"",
-	"Respects NO_COLOR, TERM=dumb, NO_ANIMATIONS,",
-	"REDUCED_MOTION, CI.",
+// helpLines is the canonical TUI key table, rendered verbatim in the ?
+// overlay. It shows the keys actually in force, so a config keybinding
+// override is visible in the app, not just in the config file. Keep
+// every line under 60 cells.
+func (m Model) helpLines() []string {
+	// k renders the key in force for an action, padded into the key
+	// column so a rebound key does not break the table.
+	k := func(action, fallback string) string {
+		key := fallback
+		if bound, ok := m.cfg.Keys[action]; ok && bound != "" {
+			key = bound
+		}
+		return padRight(key, 13)
+	}
+	return []string{
+		"j/k, up/down  move selection",
+		"g / G         top / bottom",
+		"PgUp/PgDn     page (Ctrl-B / Ctrl-F)",
+		"Tab / Enter   switch pane · focus preview",
+		k("help", "H / ?") + "this help",
+		k("filter", "/") + "filter · esc keeps, esc esc clears",
+		k("command", ":") + "command: edit delete validate",
+		"              reload clear quit help filter <query>",
+		k("edit", "e") + "open SKILL.md in $EDITOR",
+		k("delete", "d") + "/ u         delete to trash / undo (30s)",
+		k("validate", "v") + "/ " + k("rescan", "r") + "validate all / rescan",
+		"Esc           back one layer · " + k("quit", "q") + "quits",
+		"",
+		"Respects NO_COLOR, TERM=dumb, NO_ANIMATIONS,",
+		"REDUCED_MOTION, CI.",
+	}
 }
 
 func (m Model) renderHelpModal(under string) string {
@@ -320,6 +333,7 @@ func (m Model) renderHelpModal(under string) string {
 	if w > 78 {
 		w = 78
 	}
+	helpLines := m.helpLines()
 	// Size the box to its content instead of a hardcoded height that
 	// truncated the keymap on short terminals (audit E2).
 	h := len(helpLines) + 3

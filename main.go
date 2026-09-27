@@ -14,37 +14,63 @@ func main() {
 }
 
 func run(args []string) int {
-	plainFlag := false
-	noAnimFlag := false
-	jsonOut := false
-	skillsOverride := ""
-	assumeYes := false
-	var positional []string
+	var (
+		plainFlag      = false
+		noAnimFlag     = false
+		jsonOut        = false
+		namesOnly      = false
+		assumeYes      = false
+		purgeAll       = false
+		skillsOverride = ""
+		olderThan      = ""
+		positional     []string
+	)
+
+	// A bare "help" is not a command: `skillman view help` must show the
+	// skill named help, not this text. --help and -h still work.
+	wantHelp := false
 
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch a {
-		case "-h", "--help", "help":
-			printHelp()
-			return 0
+		case "-h", "--help":
+			wantHelp = true
 		case "--plain":
 			plainFlag = true
 		case "--no-animations":
 			noAnimFlag = true
 		case "--json":
 			jsonOut = true
+		case "--names":
+			namesOnly = true
 		case "--yes", "-y":
 			assumeYes = true
-		case "--skills-dir":
+		case "--all":
+			purgeAll = true
+		case "--skills-dir", "--older-than":
 			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "--skills-dir needs a value")
+				fmt.Fprintf(os.Stderr, "%s needs a value\n", a)
 				return 2
 			}
 			i++
-			skillsOverride = args[i]
+			if a == "--skills-dir" {
+				if args[i] == "" {
+					// An empty override silently fell back to the
+					// default directory, which is never what was meant.
+					fmt.Fprintln(os.Stderr, "--skills-dir needs a non-empty value")
+					return 2
+				}
+				skillsOverride = args[i]
+			} else {
+				olderThan = args[i]
+			}
 		default:
-			if strings.HasPrefix(a, "--skills-dir=") {
-				skillsOverride = strings.TrimPrefix(a, "--skills-dir=")
+			if v, ok := strings.CutPrefix(a, "--skills-dir="); ok {
+				if v == "" {
+					fmt.Fprintln(os.Stderr, "--skills-dir needs a non-empty value")
+					return 2
+				}
+				skillsOverride = v
 			} else if strings.HasPrefix(a, "-") {
 				fmt.Fprintln(os.Stderr, "unknown flag: "+a)
 				return 2
@@ -53,20 +79,27 @@ func run(args []string) int {
 			}
 		}
 	}
-	if skillsOverride != "" {
-		_ = os.Setenv("SKILLMAN_SKILLS", skillsOverride)
-	}
-	plain := plainOutput(plainFlag)
-	noAnim := !animationsEnabled(noAnimFlag)
-	if noAnimFlag {
-		noAnim = true
+	if wantHelp {
+		printHelp()
+		return 0
 	}
 
-	// Subcommands.
+	// Config first: it decides the skills directory and the theme, and
+	// the flag still wins over it.
+	cfg, cfgErr := loadConfig()
+	cfg.apply(skillsOverride)
+	if cfgErr != nil {
+		fmt.Fprintln(os.Stderr, "config warning: "+cfgErr.Error()+" (using defaults)")
+		logf("config error: %v", cfgErr)
+	}
+
+	plain := plainOutput(plainFlag)
+	noAnim := !animationsEnabled(noAnimFlag)
+
 	if len(positional) > 0 {
 		switch positional[0] {
 		case "list", "ls":
-			return runList(jsonOut, plain)
+			return runList(jsonOut, plain, namesOnly)
 		case "view", "show":
 			if len(positional) < 2 {
 				fmt.Fprintln(os.Stderr, "view needs a skill name")
@@ -81,9 +114,28 @@ func run(args []string) int {
 				return 2
 			}
 			return runDeleteCLI(positional[1], assumeYes)
+		case "trash":
+			return runTrash(positional[1:], jsonOut, purgeAll, olderThan)
+		case "completion":
+			if len(positional) < 2 {
+				fmt.Fprintln(os.Stderr, "completion needs bash or zsh")
+				return 2
+			}
+			return runCompletion(positional[1])
 		case "install":
-			fmt.Fprintln(os.Stderr, "install from GitHub lands in a later phase (see PLAN.md Phase 5)")
-			return 3
+			// Exit 4, distinct from "destructive action refused", and
+			// no pointer to a file that is on its way out.
+			fmt.Fprintln(os.Stderr, "install from GitHub is not built yet")
+			return 4
+		case "help":
+			// Only when it is the whole command line: `skillman view
+			// help` must show the skill named help, not this text.
+			if len(positional) == 1 {
+				printHelp()
+				return 0
+			}
+			fmt.Fprintln(os.Stderr, "unknown command: help")
+			return 2
 		default:
 			fmt.Fprintln(os.Stderr, "unknown command: "+positional[0])
 			printHelp()
@@ -93,23 +145,31 @@ func run(args []string) int {
 
 	// --json on its own means list --json; launching a TUI would just
 	// silently ignore the flag (audit B8).
-	if jsonOut {
-		return runList(true, true)
+	if jsonOut || namesOnly {
+		return runList(true, true, namesOnly)
 	}
 
 	// No TTY -> behave as list --plain.
 	if !term.IsTerminal(int(os.Stdout.Fd())) || !term.IsTerminal(int(os.Stdin.Fd())) {
-		return runList(jsonOut, true)
+		return runList(jsonOut, true, false)
 	}
 
-	m := NewModel(plain, noAnim)
+	m := NewModel(plain, noAnim, cfg)
+	m.restoreState(loadState())
 	// Cap redraws: full-screen rewrites on a slow terminal can queue up
 	// behind spinner frames and delay keypresses.
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithFPS(20))
-	if _, err := p.Run(); err != nil {
+	final, err := p.Run()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "tui error: "+err.Error())
 		logf("tui error: %v", err)
 		return 1
+	}
+	// Persist the session on every clean exit path, including Ctrl-C.
+	if mm, ok := final.(Model); ok {
+		if serr := saveState(mm.state()); serr != nil {
+			logf("state save: %v", serr)
+		}
 	}
 	return 0
 }

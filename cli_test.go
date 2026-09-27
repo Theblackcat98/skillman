@@ -3,7 +3,9 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // CLI exit-code contract: 0 ok, 1 issues/not found, 2 missing
@@ -12,14 +14,14 @@ import (
 func TestListExitCodes(t *testing.T) {
 	skills := t.TempDir()
 	t.Setenv("SKILLMAN_SKILLS", skills)
-	if code := runList(false, true); code != 0 {
+	if code := runList(false, true, false); code != 0 {
 		t.Errorf("empty list exit = %d, want 0", code)
 	}
 	writeSkill(t, skills, "demo", validFM("demo", "d"))
-	if code := runList(false, true); code != 0 {
+	if code := runList(false, true, false); code != 0 {
 		t.Errorf("list exit = %d, want 0", code)
 	}
-	if code := runList(true, true); code != 0 {
+	if code := runList(true, true, false); code != 0 {
 		t.Errorf("list --json exit = %d, want 0", code)
 	}
 }
@@ -100,5 +102,182 @@ func TestBareJSONPrintsList(t *testing.T) {
 	writeSkill(t, skills, "demo", validFM("demo", "d"))
 	if code := run([]string{"--json"}); code != 0 {
 		t.Errorf("bare --json exit = %d, want 0", code)
+	}
+}
+
+// --- Phase 11: trash CLI, completion, flag handling ---
+
+func TestTrashCLIListJSON(t *testing.T) {
+	skills, _ := isolatedEnv(t)
+	dir := writeSkill(t, skills, "demo", validFM("demo", "d"))
+	if _, err := deleteSkillToTrash(Skill{Name: "demo", Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	entries, _ := listTrash()
+	for _, e := range entries {
+		_ = os.Chtimes(e.Path, old, old)
+	}
+	if code := runTrash(nil, true, false, ""); code != 2 {
+		t.Errorf("trash with no subcommand = %d, want 2", code)
+	}
+	if code := runTrash([]string{"nope"}, false, false, ""); code != 2 {
+		t.Errorf("unknown trash subcommand = %d, want 2", code)
+	}
+	if code := runTrash([]string{"list"}, true, false, ""); code != 0 {
+		t.Errorf("trash list --json = %d, want 0", code)
+	}
+}
+
+func TestTrashCLIRestoreAndPurge(t *testing.T) {
+	skills, _ := isolatedEnv(t)
+	dir := writeSkill(t, skills, "demo", validFM("demo", "d"))
+	if _, err := deleteSkillToTrash(Skill{Name: "demo", Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	if code := runTrash([]string{"restore"}, false, false, ""); code != 2 {
+		t.Errorf("restore with no name = %d, want 2", code)
+	}
+	if code := runTrash([]string{"restore", "demo"}, false, false, ""); code != 0 {
+		t.Errorf("restore = %d, want 0", code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
+		t.Fatalf("skill not restored: %v", err)
+	}
+	if code := runTrash([]string{"restore", "demo"}, false, false, ""); code != 1 {
+		t.Errorf("restore of a missing entry = %d, want 1", code)
+	}
+
+	// Purge must be told what to do.
+	if _, err := deleteSkillToTrash(Skill{Name: "demo", Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	if code := runTrash([]string{"purge"}, false, false, ""); code != 2 {
+		t.Errorf("purge with no selector = %d, want 2", code)
+	}
+	if code := runTrash([]string{"purge", "--older-than", "soon"}, false, false, "soon"); code != 2 {
+		t.Errorf("purge with a bad age = %d, want 2", code)
+	}
+	if code := runTrash([]string{"purge"}, false, true, ""); code != 0 {
+		t.Errorf("purge --all = %d, want 0", code)
+	}
+	entries, err := listTrash()
+	if err != nil || len(entries) != 0 {
+		t.Errorf("trash not empty after purge --all: %v %v", entries, err)
+	}
+}
+
+func TestCompletionShells(t *testing.T) {
+	if code := runCompletion("fish"); code != 2 {
+		t.Errorf("unknown shell = %d, want 2", code)
+	}
+	if code := runCompletion(""); code != 2 {
+		t.Errorf("empty shell = %d, want 2", code)
+	}
+	for _, sh := range []string{"bash", "zsh"} {
+		if code := runCompletion(sh); code != 0 {
+			t.Errorf("completion %s = %d, want 0", sh, code)
+		}
+	}
+	// The bash script must be syntactically valid and must mention the
+	// commands it completes.
+	if !strings.Contains(bashCompletion, "complete -F _skillman skillman") {
+		t.Error("bash completion does not register the function")
+	}
+	for _, want := range []string{"trash", "restore", "purge", "completion", "--skills-dir"} {
+		if !strings.Contains(bashCompletion, want) {
+			t.Errorf("bash completion missing %q", want)
+		}
+	}
+	if !strings.HasPrefix(zshCompletion, "#compdef skillman") {
+		t.Error("zsh completion is missing its compdef header")
+	}
+}
+
+// A skill named "help" must be reachable: the bare word is only help
+// when it is the whole command line.
+func TestHelpDoesNotShadowASkill(t *testing.T) {
+	skills := t.TempDir()
+	t.Setenv("SKILLMAN_SKILLS", skills)
+	dir := writeSkill(t, skills, "help", validFM("help", "a skill literally named help"))
+	if code := run([]string{"view", "help", "--plain"}); code != 0 {
+		t.Errorf("view help = %d, want 0", code)
+	}
+	if code := run([]string{"delete", "help", "--yes"}); code != 0 {
+		t.Errorf("delete help = %d, want 0", code)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Error("the skill named help was not deleted")
+	}
+	if code := run([]string{"help"}); code != 0 {
+		t.Errorf("bare help = %d, want 0", code)
+	}
+	if code := run([]string{"delete"}); code != 2 {
+		t.Errorf("delete with no name = %d, want 2", code)
+	}
+	if code := run([]string{"delete", "help", "--yes"}); code != 1 {
+		t.Errorf("delete of an already-deleted skill = %d, want 1", code)
+	}
+}
+
+func TestFlagsRejected(t *testing.T) {
+	t.Setenv("SKILLMAN_SKILLS", t.TempDir())
+	for _, args := range [][]string{
+		{"--skills-dir="},      // empty override silently ignored the default
+		{"--skills-dir", ""},   // same, split form
+		{"--skills-dir"},       // missing value
+		{"--older-than"},       // missing value
+		{"--nope"},             // unknown flag
+		{"view"},               // missing name
+		{"delete"},             // missing name
+		{"trash"},              // missing subcommand
+		{"trash", "restore"},   // missing name
+		{"completion"},         // missing shell
+		{"completion", "fish"}, // unsupported shell
+	} {
+		if code := run(args); code != 2 {
+			t.Errorf("run(%v) = %d, want 2", args, code)
+		}
+	}
+	// install is "not built", which is its own exit code.
+	if code := run([]string{"install", "https://example.com/x"}); code != 4 {
+		t.Errorf("install = %d, want 4", code)
+	}
+}
+
+func TestListNames(t *testing.T) {
+	skills := t.TempDir()
+	t.Setenv("SKILLMAN_SKILLS", skills)
+	writeSkill(t, skills, "beta", validFM("beta", "b"))
+	writeSkill(t, skills, "alpha", validFM("alpha", "a"))
+	if code := run([]string{"list", "--names"}); code != 0 {
+		t.Errorf("list --names = %d, want 0", code)
+	}
+	if code := run([]string{"--names"}); code != 0 {
+		t.Errorf("bare --names = %d, want 0", code)
+	}
+}
+
+// Regression: the exit code used to depend on alphabetical order,
+// because it returned from inside the first invalid skill.
+func TestValidateExitCodeIsOrderIndependent(t *testing.T) {
+	skills := t.TempDir()
+	t.Setenv("SKILLMAN_SKILLS", skills)
+	writeSkill(t, skills, "aaa-warn", validFM("other", "warn only"))
+	if err := os.MkdirAll(filepath.Join(skills, "zzz-err"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code := runValidate(false); code != 2 {
+		t.Errorf("warn before error = %d, want 2 (worst wins)", code)
+	}
+	// Same skills, reversed names: the answer must not move.
+	skills2 := t.TempDir()
+	t.Setenv("SKILLMAN_SKILLS", skills2)
+	if err := os.MkdirAll(filepath.Join(skills2, "aaa-err"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSkill(t, skills2, "zzz-warn", validFM("other", "warn only"))
+	if code := runValidate(false); code != 2 {
+		t.Errorf("error before warn = %d, want 2", code)
 	}
 }

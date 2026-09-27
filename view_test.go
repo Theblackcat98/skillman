@@ -26,7 +26,7 @@ func makeSkills(n int) []Skill {
 // newTestModel builds a ready-to-render model at the given size.
 func newTestModel(t *testing.T, width, height int, plain bool) Model {
 	t.Helper()
-	m := NewModel(plain, true)
+	m := NewModel(plain, true, Config{Accent: defaultAccent})
 	m.width, m.height = width, height
 	m.ready = true
 	m.loading = false
@@ -372,7 +372,7 @@ func TestLipWidthCountsCells(t *testing.T) {
 // longBodyModel is a model with one skill whose body has 120 lines.
 func longBodyModel(t *testing.T, w, h int) Model {
 	t.Helper()
-	m := NewModel(false, true)
+	m := NewModel(false, true, Config{Accent: defaultAccent})
 	var body strings.Builder
 	for i := 1; i <= 120; i++ {
 		fmt.Fprintf(&body, "line %d of the long body\n", i)
