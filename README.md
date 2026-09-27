@@ -239,7 +239,9 @@ was built against. That reference has been absorbed here and removed.
 - Configurable: config file, env vars, flags, keybinding overrides,
   theme, persisted state.
 - Terminal respect: `NO_COLOR`, `TERM=dumb`, 256/truecolor, and never
-  colour alone to convey meaning — every badge carries a text label.
+  colour alone to convey meaning — every severity carries a text label
+  (`[ok]`, `[warn]`, `[err]`), or a mark (`!`, `x`) where a word will not
+  fit.
 - Async: no I/O on the update path. Scans and the editor run as commands.
 - Efficient rendering: a preview render cache, a spinner that only ticks
   while loading, and a 20fps cap.
@@ -251,6 +253,18 @@ stable `Code` and a `Severity`. The badge, the row colour, the
 `validate` summary and the exit code all read one value, so rewording a
 message can never change an exit code. A malformed frontmatter is one
 error, not three warnings about a file nothing can read.
+
+**One layout owner.** `layout.go` turns a terminal size into the whole
+frame: pane widths, box heights, content cells and the per-row cell
+budget. Drawing and viewport sizing both read it, so they cannot
+disagree. Pane geometry used to be recomputed in two places, and that
+duplication is what produced an off-by-one in the first review.
+
+At 70 columns and below the frame shows one pane and `Tab` switches. When
+a row is too narrow for a severity word, it spends one cell on a mark
+instead (`!` warning, `x` error, blank when clean) so the name keeps the
+cells that identify the skill. `?` help scrolls: the keymap is taller
+than a short terminal, and the overlay title carries the visible range.
 
 **Layers.** Base view, then overlays (filter, command, help), then
 modals (confirm), then notifications (toast), then the status line.
@@ -421,7 +435,7 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 2 · Safety net | done | Golden frames over a size table, cell-width and flush-frame assertions, key-driven model tests for `update.go`, frontmatter and sanitize fuzzers plus seeded stress runs, a bounded preview cache, an editor test set, and a trash-writing guard in `TestMain`. |
 | 3 · Cheap correctness | done | Dead code deleted, `--long` surfacing size and mtime, plain-by-default output with a colour opt-in, a one-table flag contract that rejects unsupported flags, `--` for flag-shaped skill names, and a create-confirmation before `e` writes a missing `SKILL.md`. |
 | 4 · Domain model | done | Typed `Issue`/`Severity` with stable codes, one reload path used by every operation, malformed frontmatter reported as one error instead of three warnings. |
-| 5 · Layout | planned | One layout owner for both sizing and drawing, a scrollable help overlay. |
+| 5 · Layout | done | `layout.go` owns all frame geometry, so drawing and sizing read the same numbers. The `?` overlay scrolls and reports its range. Rows keep the name legible at 20 columns by dropping the severity word for a one-cell mark. |
 | 6 · Selection state | planned | Selection by name, preview cache invalidated on every reload. |
 | 7 · CLI surface | planned | `list --long`, `--json` accepted or rejected everywhere, one load helper. |
 | 8 · Config, state, keymap | done | Landed as plan phases 11 and 12. |

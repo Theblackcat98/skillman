@@ -21,6 +21,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.ready = true
 		m.sizePanes()
+		if m.appMode == modeHelp {
+			m.helpVP.SetContent(strings.Join(m.helpLines(), "\n"))
+		}
 		// Keep the reader's scroll position across resize (B16 polish).
 		m.refreshPreviewAt(false)
 		return m, nil
@@ -119,12 +122,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// sizePanes pushes the layout into the viewports. The values come from
+// the one layout owner, so a pane can never be sized differently from the
+// way it is drawn (review F3).
 func (m *Model) sizePanes() {
-	h := m.mainBoxH()
-	m.preview.Width = m.previewWidth()
+	l := m.layout()
+	m.preview.Width = l.prevInner
 	// Match box() content lines exactly, otherwise the last preview
 	// lines can never scroll into view.
-	m.preview.Height = contentH(h)
+	m.preview.Height = l.bodyH
+	m.helpVP.Width = l.helpInner
+	m.helpVP.Height = l.helpBodyH
+}
+
+// openHelp shows the keymap overlay. Content and size are set here, so
+// opening help on a resized terminal shows a full box.
+func (m *Model) openHelp() tea.Cmd {
+	m.appMode = modeHelp
+	m.sizePanes()
+	m.helpVP.SetContent(strings.Join(m.helpLines(), "\n"))
+	m.helpVP.GotoTop()
+	return nil
 }
 
 // The command is always bound to a local before the model is returned.
@@ -141,10 +159,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	// Help overlay: any Esc/?/q/Enter closes.
+	// Help overlay: Esc/?/q/Enter closes, everything else scrolls. The
+	// keymap is taller than a short terminal, so j/k/pgup/pgdn/g/G are
+	// the only way to read the lower half (review E2).
 	if m.appMode == modeHelp {
-		if key == "esc" || key == "?" || key == "q" || key == "enter" {
+		switch key {
+		case "esc", "?", "q", "enter":
 			m.appMode = modeNormal
+		default:
+			var c tea.Cmd
+			m.helpVP, c = m.helpVP.Update(msg)
+			_ = c
 		}
 		return m, nil
 	}
@@ -241,8 +266,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "?", "H":
-		m.appMode = modeHelp
-		return m, nil
+		cmd := m.openHelp()
+		return m, cmd
 	case "/":
 		m.appMode = modeFilter
 		m.filter.Focus()
@@ -272,7 +297,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "pgup", "ctrl+b":
 		m.move(-10)
 	case "tab":
-		if m.width < 70 {
+		if m.width < narrowBreak {
 			m.showPreviewOv = !m.showPreviewOv
 		} else {
 			m.focusPreview = !m.focusPreview
@@ -482,8 +507,7 @@ func (m *Model) runCommand(cmd string) tea.Cmd {
 		m.appMode = modeConfirm
 		return nil
 	case "help", "h", "?":
-		m.appMode = modeHelp
-		return nil
+		return m.openHelp()
 	case "clear":
 		m.query = ""
 		m.filter.SetValue("")

@@ -143,8 +143,41 @@ func TestOverlaysFit(t *testing.T) {
 // lines can never scroll into view.
 func TestPreviewHeightMatchesBox(t *testing.T) {
 	m := newTestModel(t, 80, 24, false)
-	if m.preview.Height != contentH(m.mainBoxH()) {
-		t.Errorf("preview.Height=%d, want contentH(mainBoxH())=%d", m.preview.Height, contentH(m.mainBoxH()))
+	l := m.layout()
+	if m.preview.Height != l.bodyH {
+		t.Errorf("preview.Height=%d, want the layout bodyH=%d", m.preview.Height, l.bodyH)
+	}
+}
+
+// Layout is the single owner of frame geometry. This is the guard against
+// the duplication that produced audit B2: the box interior that box() draws
+// must be exactly the interior the layout reports, the two panes plus the
+// join gap must add up to the width, and the viewport must never be
+// wrapped wider than the pane that clips it (review F3, A12).
+func TestLayoutAgreesWithBox(t *testing.T) {
+	for w := 20; w <= 200; w++ {
+		m := newTestModel(t, w, 24, false)
+		l := m.layout()
+		if got := innerOf(l.listW); got != l.listInner {
+			t.Errorf("w=%d listInner=%d, innerOf=%d", w, l.listInner, got)
+		}
+		if l.narrow {
+			if l.listW != l.width || l.prevW != l.width {
+				t.Errorf("w=%d narrow panes must both be full width, got %d/%d", w, l.listW, l.prevW)
+			}
+		} else if got := l.listW + 1 + l.prevW; got != l.width {
+			t.Errorf("w=%d panes %d + gap + %d = %d, want %d", w, l.listW, l.prevW, got, l.width)
+		}
+		if l.previewWrap() > l.prevInner && l.prevInner >= 10 {
+			t.Errorf("w=%d wraps at %d inside a %d cell pane; box() would clip it",
+				w, l.previewWrap(), l.prevInner)
+		}
+		// The drawn box must be exactly the interior the layout claims.
+		drawn := box("t", "x", l.listW, l.boxH, false, m.theme, false)
+		first := strings.Split(drawn, "\n")[1] // the top border
+		if got := lipWidth(first); got != l.listW {
+			t.Errorf("w=%d list box row is %d cells, layout says %d", w, got, l.listW)
+		}
 	}
 }
 
@@ -272,7 +305,7 @@ func TestOverlayComposites(t *testing.T) {
 // Phase 10: the help key table is complete and nothing is cut at 80x24.
 func TestHelpKeyTableComplete(t *testing.T) {
 	m := newTestModel(t, 80, 24, false)
-	m.appMode = modeHelp
+	m.openHelp()
 	view := stripANSI(m.View())
 	for _, want := range []string{"move selection down", "move selection up", "first skill",
 		"last skill", "switch pane", "H / ?", "filter", "command: edit",
@@ -420,4 +453,115 @@ func send(t *testing.T, m *Model, msg tea.Msg) {
 
 func keyPress(r rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+}
+
+// The help keymap is taller than a short terminal. Before the viewport it
+// was silently cut off with no scroll and no indication (review E2).
+func TestHelpOverlayScrollsOnAShortTerminal(t *testing.T) {
+	m := newTestModel(t, 36, 12, false)
+	m.openHelp()
+	total := m.helpVP.TotalLineCount()
+	l := m.layout()
+	if l.helpBodyH >= total {
+		t.Skipf("the keymap fits in %d lines; nothing to scroll", l.helpBodyH)
+	}
+	frame := stripANSI(m.View())
+	if !strings.Contains(frame, "1–") {
+		t.Fatalf("a scrollable help box does not say where it is:\n%s", frame)
+	}
+	if !strings.Contains(frame, fmt.Sprintf("/%d", total)) {
+		t.Errorf("help title does not give the total line count:\n%s", frame)
+	}
+	// The key column is what must survive a narrow box: the descriptions
+	// may be clipped, but "which key does what" cannot.
+	for _, want := range []string{"j / down", "g / home", "G / end"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("the visible part of the keymap is missing %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "quit from the base layer") {
+		t.Errorf("the bottom of the keymap should not fit yet:\n%s", frame)
+	}
+
+	// j scrolls, and the title follows.
+	mm, _ := m.Update(keyPress('j'))
+	m = mm.(Model)
+	if m.helpVP.YOffset == 0 {
+		t.Error("j did not scroll the help overlay")
+	}
+	if !strings.Contains(stripANSI(m.View()), "2–") {
+		t.Error("the help title did not follow the scroll position")
+	}
+	// Esc closes.
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mm.(Model)
+	if m.appMode != modeNormal {
+		t.Error("esc did not close the help overlay")
+	}
+}
+
+// At 20 columns the old row gave the name 6 cells and every skill read
+// "skill-", so the list was unidentifiable (review E1).
+func TestRowsStayIdentifiableWhenNarrow(t *testing.T) {
+	m := newTestModel(t, 20, 10, true)
+	seen := map[string]bool{}
+	for i := 0; i < len(m.filtered) && i < 8; i++ {
+		row := stripANSI(m.renderRow(i, m.layout().row))
+		if lipWidth(row) > m.layout().listInner {
+			t.Errorf("row %d is %d cells, pane interior is %d: %q",
+				i, lipWidth(row), m.layout().listInner, row)
+		}
+		name := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(row), "> "))
+		// Strip the trailing severity indicator to get back the name.
+		name = strings.TrimRight(name, " !x")
+		if lipWidth(name) < 7 {
+			t.Errorf("row %d shows only %d cells of name %q, too few to identify the skill", i, lipWidth(name), name)
+		}
+		if seen[name] {
+			t.Errorf("row %d repeats the name %q", i, name)
+		}
+		seen[name] = true
+	}
+}
+
+// The severity word is a luxury; when the row cannot afford it, a one-cell
+// mark takes over, and a mark always means a problem.
+func TestNarrowRowsUseASeverityMark(t *testing.T) {
+	m := newTestModel(t, 20, 10, true)
+	r := m.layout().row
+	if !r.mark || r.severity != 1 {
+		t.Fatalf("a 20-cell pane should use a 1-cell mark, got mark=%v severity=%d", r.mark, r.severity)
+	}
+	if got := severityMark(SevErr); got != "x" {
+		t.Errorf("error mark = %q, want x", got)
+	}
+	if got := severityMark(SevWarn); got != "!" {
+		t.Errorf("warn mark = %q, want !", got)
+	}
+	if got := severityMark(SevOK); got != " " {
+		t.Errorf("ok mark = %q, want a blank so a mark always means a problem", got)
+	}
+	// A wide pane keeps the word.
+	wide := newTestModel(t, 80, 24, true).layout().row
+	if wide.mark || wide.severity != rowBadgeW {
+		t.Errorf("an 80-cell pane should keep the word badge, got mark=%v severity=%d", wide.mark, wide.severity)
+	}
+}
+
+// The row budget must always add up: a plan that overflows is a frame
+// that wraps, and one that wastes cells is a frame with dead space.
+func TestRowPlanFitsItsPane(t *testing.T) {
+	for inner := 10; inner <= 120; inner++ {
+		r := planRow(inner)
+		if r.name < 1 {
+			t.Errorf("inner=%d leaves no room for a name", inner)
+		}
+		used := r.marker + r.name + rowSepW + r.severity
+		if r.category > 0 {
+			used += rowSepW + r.category
+		}
+		if used > inner {
+			t.Errorf("inner=%d: plan uses %d cells (%+v)", inner, used, r)
+		}
+	}
 }

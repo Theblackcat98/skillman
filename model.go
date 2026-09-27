@@ -111,6 +111,10 @@ type Model struct {
 	query    string
 
 	preview viewport.Model
+	// helpVP scrolls the ? overlay. The keymap is taller than a short
+	// terminal, so a fixed-height box silently cut it off with no way to
+	// see the rest (review E2).
+	helpVP  viewport.Model
 	filter  textinput.Model
 	cmdline textinput.Model
 	spinner spinner.Model
@@ -161,7 +165,7 @@ func NewModel(plain, noAnim bool, cfg Config) Model {
 	return Model{
 		theme: th, cfg: cfg, plain: plain, noAnim: noAnim,
 		loading: true,
-		preview: vp, filter: ti, cmdline: ci, spinner: sp,
+		preview: vp, helpVP: vp, filter: ti, cmdline: ci, spinner: sp,
 		width: 80, height: 24,
 		previewCache: map[string]string{},
 		scroll:       map[string]int{},
@@ -213,7 +217,7 @@ func (m *Model) refreshPreviewAt(reset bool) {
 	if m.previewName != "" && m.previewName != name {
 		m.scroll[m.previewName] = m.preview.YOffset
 	}
-	w := m.previewWidth()
+	w := m.layout().previewWrap()
 	if sel == nil {
 		switch {
 		case m.loading:
@@ -316,32 +320,6 @@ func (m *Model) sharedRenderer(w int) *glamour.TermRenderer {
 	return m.glam
 }
 
-// paneW returns the list and preview pane widths for the current terminal
-// width. Layout (View) and sizing (previewWidth) must agree: the glamour
-// wrap width has to equal the box interior or the preview reflows as the
-// selection changes. Duplicated layout constants caused audit B2.
-func (m Model) paneW() (listW, prevW int) {
-	if m.width < 70 {
-		// Narrow: one pane at a time, full width.
-		return m.width, m.width
-	}
-	// joinH puts a single space between the panes, so the panes plus the
-	// gap must add up to exactly m.width for a flush frame.
-	listW = (m.width - 1) / 2
-	prevW = m.width - 1 - listW
-	return listW, prevW
-}
-
-func (m *Model) previewWidth() int {
-	_, prevW := m.paneW()
-	// box() draws "| content |", so the interior is 2 cells narrower.
-	w := prevW - 2
-	if w < 20 {
-		w = 20
-	}
-	return w
-}
-
 func (m *Model) setToast(text string, isErr bool) tea.Cmd {
 	m.toast = text
 	m.toastErr = isErr
@@ -352,29 +330,4 @@ func (m *Model) setToast(text string, isErr bool) tea.Cmd {
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 		return toastClearMsg{seq: seq}
 	})
-}
-
-// mainBoxH is the height of the list/preview box. Layout (View) and
-// sizing (sizePanes) must share this one number — duplicated constants
-// drifted before and produced the off-by-one in audit B2.
-//
-// The frame is header + box + status + footer, so the box takes the
-// remaining rows exactly. The old height-4 left one row permanently
-// unused (audit B16).
-func (m Model) mainBoxH() int {
-	h := m.height - 3
-	if h < 5 {
-		h = 5
-	}
-	return h
-}
-
-// contentH is how many body lines box() actually renders for a box of
-// height h: title line + top + bottom borders are not content.
-func contentH(h int) int {
-	v := h - 3
-	if v < 1 {
-		v = 1
-	}
-	return v
 }

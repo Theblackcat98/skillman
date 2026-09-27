@@ -21,4 +21,4 @@ SkillMan  20/20 skills                                            ?help  /search
   |Respects NO_COLOR, TERM=dumb, NO_ANIMATIONS, REDUCED_MOTION, CI.          |  
   +--------------------------------------------------------------------------+  
 skill-04 · Test skill number 04  |  help                                        
-esc ? q close                                                                   
+j/k scroll · esc ? q close                                                      

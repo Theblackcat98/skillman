@@ -128,7 +128,14 @@ func TestGoldenFramesCoverOverlays(t *testing.T) {
 		name := fmt.Sprintf("golden-80x24-overlay-%d.golden", mode)
 		t.Run(name, func(t *testing.T) {
 			m := goldenModel(t, 80, 24)
-			m.appMode = mode
+			// Enter help through the real transition: the overlay scrolls
+			// in a viewport, and setting the mode alone would leave it
+			// blank (review E2).
+			if mode == modeHelp {
+				m.openHelp()
+			} else {
+				m.appMode = mode
+			}
 			frame := m.View()
 			assertFrameShape(t, frame, 80, 24)
 			checkGolden(t, name, frame)

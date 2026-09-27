@@ -64,17 +64,25 @@ func (m Model) renderHeader() string {
 	return m.theme.Title.Render(string(all[:len(head)])) + m.theme.Dim.Render(string(all[len(head):]))
 }
 
+// renderMain draws the list and preview from the resolved layout. It
+// computes no geometry of its own: the single-pane case and the two-pane
+// case are both expressed in layout (review F3).
 func (m Model) renderMain() string {
-	h := m.mainBoxH()
-	listW, prevW := m.paneW()
-	if m.width < 70 {
-		// Narrow: toggle between list and preview.
-		if m.showPreviewOv {
-			return m.renderPreviewBox(listW, h)
+	l := m.layout()
+	if l.narrow {
+		if l.showPreview {
+			return m.renderPreviewBox(l.prevW, l.boxH)
 		}
-		return m.renderListBox(listW, h)
+		return m.renderListBox(l.listW, l.boxH)
 	}
-	return joinH(m.renderListBox(listW, h), m.renderPreviewBox(prevW, h))
+	left, right := "", ""
+	if l.showList {
+		left = m.renderListBox(l.listW, l.boxH)
+	}
+	if l.showPreview {
+		right = m.renderPreviewBox(l.prevW, l.boxH)
+	}
+	return joinH(left, right)
 }
 
 func (m Model) renderListBox(w, h int) string {
@@ -82,6 +90,7 @@ func (m Model) renderListBox(w, h int) string {
 	// box() renders h - 3 content lines (title + two borders); the old
 	// h - 2 made the selected row unrenderable at the bottom edge (B2).
 	vis := contentH(h)
+	row := m.layout().row
 	start := 0
 	if m.cursor >= vis {
 		start = m.cursor - vis + 1
@@ -110,7 +119,7 @@ func (m Model) renderListBox(w, h int) string {
 		}
 	} else {
 		for i := start; i < end; i++ {
-			rows = append(rows, m.renderRow(i, w-4))
+			rows = append(rows, m.renderRow(i, row))
 		}
 	}
 	for len(rows) < vis {
@@ -120,35 +129,27 @@ func (m Model) renderListBox(w, h int) string {
 	return box(title, body, w, h, active, m.theme, m.plain)
 }
 
-func (m Model) renderRow(i, w int) string {
+// renderRow draws one skill row from the frame's row plan. It does no
+// width arithmetic: the budget was resolved once in planRow, so every row
+// in a frame lines up and no row can overflow its pane (review F3).
+func (m Model) renderRow(i int, r rowPlan) string {
 	s := m.filtered[i]
 	level := s.Severity()
 	marker := "  "
 	if i == m.cursor {
 		marker = "> "
 	}
-	// Priority layout: marker + name + badge must always fit; the
-	// category column only appears when room remains. The old fixed
-	// layout truncated the badge away entirely at 70-97 cols, leaving
-	// status conveyed by color alone (audit B1).
-	const nameCap, badgeCol = 22, 6
-	nameW := w - 2 - 1 - badgeCol - 1 // marker, gap, badge column, gap
-	if nameW > nameCap {
-		nameW = nameCap
+	// Priority: marker, then name, then severity, then category. The old
+	// layout fixed the name column first and truncated the badge away
+	// entirely at 70-97 cols, leaving status conveyed by color alone
+	// (audit B1), and at 20 cols it cut the name to "skill-" so every
+	// row looked alike (review E1).
+	sev := padRight(r.severityCells(level), r.severity)
+	line := marker + padRight(truncRunes(s.Name, r.name), r.name) + " " + sev
+	if r.category > 0 && s.Category != "" {
+		line += " " + truncRunes(s.Category, r.category)
 	}
-	if nameW < 1 {
-		nameW = 1
-	}
-	line := marker + padRight(truncRunes(s.Name, nameW), nameW) + " " + padRight("["+level.String()+"]", badgeCol)
-	if s.Category != "" {
-		budget := w - lipWidth(line) - 1
-		if budget > 12 {
-			budget = 12
-		}
-		if budget >= 4 {
-			line += " " + truncRunes(s.Category, budget)
-		}
-	}
+	w := r.inner
 	line = truncate(line, w)
 	if i != m.cursor {
 		if m.plain {
@@ -175,7 +176,7 @@ func (m Model) renderPreviewBox(w, h int) string {
 	title := "preview"
 	if sel != nil {
 		// "preview · " is 10 cells; box() trims the rest to the interior.
-		title = "preview · " + truncRunes(sel.Name, w-12)
+		title = "preview · " + truncRunes(sel.Name, max(w-12, 1))
 	}
 	// The viewport is sized in sizePanes from paneW(); assigning
 	// m.preview.Width here wrote to a value copy and did nothing.
@@ -286,7 +287,7 @@ func (m Model) renderFooter() string {
 	case modeConfirm, modeConfirmCreate:
 		hints = "y confirm · n cancel"
 	case modeHelp:
-		hints = "esc ? q close"
+		hints = "j/k scroll · esc ? q close"
 	default:
 		// The full keymap lives in the ? overlay; the footer only has
 		// to name the keys that fit.
@@ -308,19 +309,20 @@ func (m Model) helpLines() []string {
 	return append(lines, envGateLines...)
 }
 
+// renderHelpModal draws the keymap in a scrolling viewport. The box is
+// sized to the content up to the terminal height, and the title carries
+// the visible range so a cut-off keymap says so (review E2).
 func (m Model) renderHelpModal(under string) string {
-	w := m.width - 4
-	if w > 78 {
-		w = 78
+	l := m.layout()
+	// openHelp() is the transition that fills the viewport. Falling back
+	// to the raw lines keeps the overlay from rendering blank if a future
+	// caller sets the mode directly.
+	body := m.helpVP.View()
+	if m.helpVP.TotalLineCount() == 0 {
+		body = strings.Join(m.helpLines(), "\n")
 	}
-	helpLines := m.helpLines()
-	// Size the box to its content instead of a hardcoded height that
-	// truncated the keymap on short terminals (audit E2).
-	h := len(helpLines) + 3
-	if h > m.height-1 {
-		h = m.height - 1
-	}
-	modal := box("help · ?", strings.Join(helpLines, "\n"), w, h, true, m.theme, m.plain)
+	title := l.helpTitle(viewportRange{offset: m.helpVP.YOffset, total: m.helpVP.TotalLineCount()})
+	modal := box(title, body, l.helpW, l.helpH, true, m.theme, m.plain)
 	return m.overlay(under, modal, m.width, m.height)
 }
 

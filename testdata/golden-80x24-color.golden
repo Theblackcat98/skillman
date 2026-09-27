@@ -3,7 +3,7 @@ SkillMan  20/20 skills                                            ?help  /search
 +-------------------------------------+ +--------------------------------------+
 |  skill-01               [ok]        | |# skill-04                            |
 |  skill-02               [ok]        | |                                      |
-|  skill-03               [warn]      | |Test skill number 04                  |
+|  skill-03               [warn] analy| |Test skill number 04                  |
 |> skill-04               [ok]        | |                                      |
 |  skill-05               [ok]        | |---                                   |
 |  skill-06               [ok]        | |                                      |
