@@ -288,7 +288,7 @@ func run(args []string) int {
 		}
 		switch cmd {
 		case "list", "ls":
-			return runList(jsonOut, plain, namesOnly, longOut)
+			return runList(jsonOut, namesOnly, longOut)
 		case "view", "show":
 			if len(positional) < 2 {
 				fmt.Fprintln(os.Stderr, "view needs a skill name")
@@ -349,12 +349,12 @@ func run(args []string) int {
 	// --json on its own means list --json; launching a TUI would just
 	// silently ignore the flag (audit B8).
 	if jsonOut || namesOnly {
-		return runList(true, true, namesOnly, longOut)
+		return runList(true, namesOnly, longOut)
 	}
 
 	// No TTY -> behave as list --plain.
 	if !term.IsTerminal(int(os.Stdout.Fd())) || !term.IsTerminal(int(os.Stdin.Fd())) {
-		return runList(jsonOut, true, false, longOut)
+		return runList(jsonOut, true, longOut)
 	}
 
 	m := NewModel(plain, noAnim, cfg)

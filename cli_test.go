@@ -14,14 +14,14 @@ import (
 func TestListExitCodes(t *testing.T) {
 	skills := t.TempDir()
 	t.Setenv("SKILLMAN_SKILLS", skills)
-	if got := code(func() int { return runList(false, true, false, false) }); got != 0 {
+	if got := code(func() int { return runList(false, false, false) }); got != 0 {
 		t.Errorf("empty list exit = %d, want 0", got)
 	}
 	writeSkill(t, skills, "demo", validFM("demo", "d"))
-	if got := code(func() int { return runList(false, true, false, false) }); got != 0 {
+	if got := code(func() int { return runList(false, false, false) }); got != 0 {
 		t.Errorf("list exit = %d, want 0", got)
 	}
-	if got := code(func() int { return runList(true, true, false, false) }); got != 0 {
+	if got := code(func() int { return runList(true, false, false) }); got != 0 {
 		t.Errorf("list --json exit = %d, want 0", got)
 	}
 }
@@ -359,18 +359,18 @@ func TestListLongSurfacesSizeAndModTime(t *testing.T) {
 	writeSkill(t, skills, "demo",
 		"---\nname: demo\ndescription: d\nlicense: MIT\ncompatibility: any\nmetadata:\n  category: dev\n---\n\nbody\n")
 
-	short := captureStdout(t, func() { runList(false, true, false, false) })
+	short := captureStdout(t, func() { runList(false, false, false) })
 	if strings.Contains(short, "size=") {
 		t.Errorf("plain list shows --long fields:\n%s", short)
 	}
-	long := captureStdout(t, func() { runList(false, true, false, true) })
+	long := captureStdout(t, func() { runList(false, false, true) })
 	for _, want := range []string{"size=", "modified=", "demo"} {
 		if !strings.Contains(long, want) {
 			t.Errorf("list --long missing %q:\n%s", want, long)
 		}
 	}
 	// And they are machine-readable too.
-	js := captureStdout(t, func() { runList(true, true, false, false) })
+	js := captureStdout(t, func() { runList(true, false, false) })
 	if !strings.Contains(js, `"size_bytes"`) || !strings.Contains(js, `"modified"`) {
 		t.Errorf("list --json missing size/modified:\n%s", js)
 	}

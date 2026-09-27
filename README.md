@@ -483,7 +483,7 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 4 · Domain model | done | Typed `Issue`/`Severity` with stable codes, one reload path used by every operation, malformed frontmatter reported as one error instead of three warnings. |
 | 5 · Layout | done | `layout.go` owns all frame geometry, so drawing and sizing read the same numbers. The `?` overlay scrolls and reports its range. Rows keep the name legible at 20 columns by dropping the severity word for a one-cell mark. |
 | 6 · Selection state | done | The selection is a name, not an index into a list that a reload reshuffles. A filtered-out selection is remembered rather than lost, and `FilterSkills` returns a copy. |
-| 7 · CLI surface | planned | `list --long`, `--json` accepted or rejected everywhere, one load helper. |
+| 7 · CLI surface | done | `list --long` surfaces size, mtime, licence and category; `--json` carries them too; a flag a command does not honour is rejected rather than ignored; every command loads skills through one helper. The list table's unused `plain` parameter is gone, because a flag the code cannot honour is a promise it must not make. |
 | 8 · Config, state, keymap | done | Landed as plan phases 11 and 12. |
 | 9 · Docs | done | README, the `?` overlay, `--help` and the man page all read one set of tables, and a test fails if any of the four drifts. |
 | 10 · Memory and scale | done | The preview render cache is bounded at 24 entries, and a scan reads only the frontmatter of each `SKILL.md` — the body is loaded when a skill is previewed or printed. |

@@ -25,7 +25,10 @@ func loadSkills() ([]Skill, int) {
 	return skills, 0
 }
 
-func runList(jsonOut, plain, names, long bool) int {
+// runList prints the skill table. It takes no styling option: the table
+// has no colour in it, so a plain flag would be a promise the code could
+// not keep. The parameter was carried and ignored (review E13).
+func runList(jsonOut, names, long bool) int {
 	skills, code := loadSkills()
 	if code != 0 {
 		return code
