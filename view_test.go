@@ -242,8 +242,13 @@ func TestOverlayComposites(t *testing.T) {
 			if strings.Contains(view, "--- [Esc] close ---") {
 				t.Errorf("mode %d still appends the close line (B11)", mode)
 			}
-			// The background is still on screen behind the modal.
-			if !strings.Contains(view, "SkillMan") {
+			// The background stays on screen behind a modal that fits.
+			// A modal as tall as the terminal covers it by definition.
+			modalH := len(m.helpLines()) + 3
+			if mode == modeConfirm {
+				modalH = 6
+			}
+			if modalH < sz[1] && !strings.Contains(view, "SkillMan") {
 				t.Errorf("mode %d blanked the background (B11)", mode)
 			}
 		}
@@ -255,7 +260,10 @@ func TestHelpKeyTableComplete(t *testing.T) {
 	m := newTestModel(t, 80, 24, false)
 	m.appMode = modeHelp
 	view := stripANSI(m.View())
-	for _, want := range []string{"move selection", "top / bottom", "switch pane", "H / ?", "filter", "command:", "$EDITOR", "delete to trash", "validate all", "back one layer"} {
+	for _, want := range []string{"move selection down", "move selection up", "first skill",
+		"last skill", "switch pane", "H / ?", "filter", "command: edit",
+		"$EDITOR", "delete to trash", "undo a delete", "validate all",
+		"rescan", "quit from the base layer", "back one layer", "NO_COLOR"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("help overlay missing %q", want)
 		}

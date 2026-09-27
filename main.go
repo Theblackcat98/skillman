@@ -79,15 +79,17 @@ func run(args []string) int {
 			}
 		}
 	}
-	if wantHelp {
-		printHelp()
-		return 0
-	}
-
 	// Config first: it decides the skills directory and the theme, and
 	// the flag still wins over it.
 	cfg, cfgErr := loadConfig()
 	cfg.apply(skillsOverride)
+
+	if wantHelp {
+		// The help text lists the keys actually in force, so it needs
+		// the config; it does not need to complain about a bad one.
+		printHelp(cfg)
+		return 0
+	}
 	if cfgErr != nil {
 		fmt.Fprintln(os.Stderr, "config warning: "+cfgErr.Error()+" (using defaults)")
 		logf("config error: %v", cfgErr)
@@ -131,14 +133,14 @@ func run(args []string) int {
 			// Only when it is the whole command line: `skillman view
 			// help` must show the skill named help, not this text.
 			if len(positional) == 1 {
-				printHelp()
+				printHelp(cfg)
 				return 0
 			}
 			fmt.Fprintln(os.Stderr, "unknown command: help")
 			return 2
 		default:
 			fmt.Fprintln(os.Stderr, "unknown command: "+positional[0])
-			printHelp()
+			printHelp(cfg)
 			return 2
 		}
 	}

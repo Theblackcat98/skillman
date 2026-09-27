@@ -1,3 +1,14 @@
+# Archived plan (2026-09-27)
+
+This is the phased plan as it stood on 2026-09-27, kept for history only.
+The current roadmap lives in [../README.md](../README.md#roadmap), which is
+the single source of truth; this file is not maintained.
+
+A full read of the project, its defects, a from-scratch redesign sketch and a
+longer roadmap: [review-2026-09-27.md](review-2026-09-27.md).
+
+---
+
 # SkillMan — Phased Plan (Bubble Tea, Go)
 
 Simple but beautiful TUI to manage skills in `~/.config/opencode/skills/`.

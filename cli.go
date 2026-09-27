@@ -153,12 +153,11 @@ func runDeleteCLI(name string, assumeYes bool) int {
 				fmt.Fprintf(os.Stderr, "refusing to delete %q without --yes\n", name)
 				return 3
 			}
-			dest, err := deleteSkillToTrash(s)
-			if err != nil {
+			if _, err := deleteSkillToTrash(s); err != nil {
 				fmt.Fprintln(os.Stderr, "delete error: "+err.Error())
 				return 1
 			}
-			fmt.Printf("moved %s to %s (restore manually to undo)\n", name, dest)
+			fmt.Printf("moved %s to the trash — restore with: skillman trash restore %s\n", name, name)
 			return 0
 		}
 	}
@@ -316,46 +315,59 @@ func runCompletion(shell string) int {
 	return 0
 }
 
-func printHelp() {
-	fmt.Printf(`skillman — manage opencode skills
-
-Usage:
-  skillman                        launch TUI (TTY)
-  skillman list [--json|--names]   list skills
-  skillman view <name> [--plain]  show skill preview
-  skillman validate [--json]      validate frontmatter
-  skillman delete <name> --yes    move skill to trash
-  skillman trash list [--json]    list trashed skills
-  skillman trash restore <name>   put a skill back
-  skillman trash purge --older-than 30d | --all
-  skillman completion bash|zsh    print a shell completion script
-
-Flags:
-  --plain            no colors/markdown styling (also NO_COLOR, TERM=dumb)
-  --no-animations    disable spinner/transitions (also NO_ANIMATIONS, REDUCED_MOTION, CI)
-  --skills-dir DIR   override skills directory (also SKILLMAN_SKILLS, config.yaml)
-  --older-than AGE   trash purge age: 30d or 720h
-  --all              trash purge: remove every entry
-  -h, --help         show this help
-
-Exit codes:
-  0  ok
-  1  validation issues, or skill not found
-  2  bad usage, or a skill is missing SKILL.md
-  3  destructive action refused without --yes
-  4  command not built in this version
-
-TUI keys:
-  j/k, arrows move · Tab pane · / filter · : command · e edit
-  d delete · u undo · v validate · r rescan · ? help · q quit
-
-Config: %s
-  skills_dir: where skills live
-  accent:     UI accent colour, e.g. "#34D399"
-  keys:       rebind an action, e.g. keys: {delete: X}
-              known actions: %s
-
-State: %s (last selection, preview scroll, pane focus)
-Trash: %s
-`, configPath(), overridableNames(), statePath(), trashDir())
+// printHelp is generated from the same keymap and exit code table that
+// the README documents, so the two cannot drift.
+func printHelp(cfg Config) {
+	help := []string{
+		"skillman — manage opencode skills",
+		"",
+		"Usage:",
+		"  skillman                        launch TUI (TTY)",
+		"  skillman list [--json|--names]   list skills",
+		"  skillman view <name> [--plain]  show skill preview",
+		"  skillman validate [--json]      validate frontmatter",
+		"  skillman delete <name> --yes    move skill to trash",
+		"  skillman trash list [--json]    list trashed skills",
+		"  skillman trash restore <name>   put a skill back",
+		"  skillman trash purge --older-than 30d | --all",
+		"  skillman completion bash|zsh    print a shell completion script",
+		"",
+		"Flags:",
+		"  --plain            no colors/markdown styling (also NO_COLOR, TERM=dumb)",
+		"  --no-animations    disable spinner/transitions (also NO_ANIMATIONS, REDUCED_MOTION, CI)",
+		"  --skills-dir DIR   override skills directory (also SKILLMAN_SKILLS, config.yaml)",
+		"  --older-than AGE   trash purge age: 30d or 720h",
+		"  --all              trash purge: remove every entry",
+		"  -h, --help         show this help",
+		"",
+		"Exit codes:",
+	}
+	help = append(help, exitCodeLines()...)
+	help = append(help,
+		"",
+		"TUI keys:",
+	)
+	for _, line := range keyTableLines(cfg) {
+		help = append(help, "  "+line)
+	}
+	help = append(help,
+		"",
+		"Environment variables:",
+	)
+	help = append(help, envVarLines()...)
+	help = append(help,
+		"",
+		"",
+		"Config: "+configPath(),
+		"  skills_dir: where skills live",
+		"  accent:     UI accent colour, e.g. \"#34D399\"",
+		"  keys:       rebind an action, e.g. keys: {delete: X}",
+		"              known actions: "+overridableNames(),
+		"",
+		"State: "+statePath()+" (last selection, preview scroll, pane focus)",
+		"Trash: "+trashDir(),
+		"",
+		"Full documentation: README.md",
+	)
+	fmt.Println(strings.Join(help, "\n"))
 }

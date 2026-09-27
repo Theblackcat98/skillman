@@ -295,37 +295,13 @@ func (m Model) renderFooter() string {
 	return m.theme.Footer.Render(hints)
 }
 
-// helpLines is the canonical TUI key table, rendered verbatim in the ?
-// overlay. It shows the keys actually in force, so a config keybinding
-// override is visible in the app, not just in the config file. Keep
-// every line under 60 cells.
+// helpLines is the ? overlay body: the canonical keymap, then the
+// environment gates. Both come from the single definition in keymap.go,
+// so the overlay can never disagree with --help or the README.
 func (m Model) helpLines() []string {
-	// k renders the key in force for an action, padded into the key
-	// column so a rebound key does not break the table.
-	k := func(action, fallback string) string {
-		key := fallback
-		if bound, ok := m.cfg.Keys[action]; ok && bound != "" {
-			key = bound
-		}
-		return padRight(key, 13)
-	}
-	return []string{
-		"j/k, up/down  move selection",
-		"g / G         top / bottom",
-		"PgUp/PgDn     page (Ctrl-B / Ctrl-F)",
-		"Tab / Enter   switch pane · focus preview",
-		k("help", "H / ?") + "this help",
-		k("filter", "/") + "filter · esc keeps, esc esc clears",
-		k("command", ":") + "command: edit delete validate",
-		"              reload clear quit help filter <query>",
-		k("edit", "e") + "open SKILL.md in $EDITOR",
-		k("delete", "d") + "/ u         delete to trash / undo (30s)",
-		k("validate", "v") + "/ " + k("rescan", "r") + "validate all / rescan",
-		"Esc           back one layer · " + k("quit", "q") + "quits",
-		"",
-		"Respects NO_COLOR, TERM=dumb, NO_ANIMATIONS,",
-		"REDUCED_MOTION, CI.",
-	}
+	lines := keyTableLines(m.cfg)
+	lines = append(lines, "")
+	return append(lines, envGateLines...)
 }
 
 func (m Model) renderHelpModal(under string) string {
