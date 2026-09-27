@@ -97,7 +97,7 @@ Hygiene gaps:
 - Fixes: always schedule toast dismissal (drop the `noAnim` early-return) and add generation tokens to toast/undo timers (B5/B6); editor via `tea.ExecProcess` with alt-screen suspend + `$EDITOR` arg splitting + rescan after edit using the result (B10); surface YAML parse errors as an issue (B12); trash: unique dest name incl. pid, copy+remove fallback for cross-device moves (B13); undo restores to original name when free instead of `<name>-restored` (B14).
 - Check: `NO_ANIMATIONS=1` delete toast clears at 3s; rapid double-delete both land in trash; `EDITOR='true'` edit returns to a intact TUI frame; corrupted frontmatter reports `invalid YAML`; unit tests from Phase 9 cover parse/trash naming.
 
-## Phase 9 — Test suite + CI
+## Phase 9 — Test suite + CI ✅
 - Goal: lock the fixes in; make regressions like B1/B2 impossible.
 - Files: `skills_test.go`, `view_test.go`, `trash_test.go`, `cli_test.go`, optional `scripts/smoke-tmux.sh`.
 - Tests: frontmatter parse (valid/invalid/missing/CRLF), `FilterSkills`, badge/validate exit codes (0/1/2), trash naming + undo collision, golden render assertions at 80×24 (row width ≤ pane, badge present, cursor row visible at bottom, footer ≤ 80 cols, no ESC when plain).
