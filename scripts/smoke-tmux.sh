@@ -261,4 +261,74 @@ else
 fi
 rm -rf "$GOOD"
 
+# --- install, against a throwaway local repository -------------------------
+# This builds a git repository in a temp directory and installs into a
+# second temp directory. It never touches the real skills directory and
+# never reaches the network, so the dry run and the real path are both
+# exercised for real rather than mocked.
+command -v git >/dev/null 2>&1 && {
+  REPO="$FX-repo"
+  mkdir -p "$REPO/skills/installed-one" "$REPO/skills/installed-two"
+  printf -- '---\nname: installed-one\ndescription: from the fixture repo\n---\n\nbody one\n' \
+    >"$REPO/skills/installed-one/SKILL.md"
+  printf -- '---\nname: installed-two\ndescription: also from the repo\n---\n\nbody two\n' \
+    >"$REPO/skills/installed-two/SKILL.md"
+  printf 'not a skill\n' >"$REPO/README.md"
+  git -C "$REPO" init -q 2>/dev/null &&
+    git -C "$REPO" -c user.email=t@e -c user.name=t add -A 2>/dev/null &&
+    git -C "$REPO" -c user.email=t@e -c user.name=t commit -qm init 2>/dev/null || true
+
+  if [ -d "$REPO/.git" ]; then
+    DEST="$FX-install"
+    mkdir -p "$DEST"
+
+    # A dry run must report and write nothing.
+    if SKILLMAN_SKILLS="$DEST" "$BIN" install "file://$REPO" --dry-run 2>&1 |
+      grep -q "would install"; then
+      pass "install --dry-run reports what it would do"
+    else
+      bad "install --dry-run did not report"
+    fi
+    if [ -z "$(ls -A "$DEST" 2>/dev/null)" ]; then
+      pass "install --dry-run wrote nothing"
+    else
+      bad "install --dry-run wrote into the skills directory"
+    fi
+
+    # A remote helper is remote code execution and must be refused.
+    if SKILLMAN_SKILLS="$DEST" "$BIN" install 'ext::sh -c id' >/dev/null 2>&1; then
+      bad "install accepted a git remote helper"
+    else
+      pass "install refuses a git remote helper"
+    fi
+
+    # The real thing.
+    if SKILLMAN_SKILLS="$DEST" "$BIN" install "file://$REPO" >/dev/null 2>&1; then
+      pass "install copies from a repository"
+    else
+      bad "install failed against a local repository"
+    fi
+    if [ -f "$DEST/installed-one/SKILL.md" ] && [ -f "$DEST/installed-two/SKILL.md" ]; then
+      pass "the installed skills are on disk"
+    else
+      bad "the installed skills are missing"
+    fi
+    if SKILLMAN_SKILLS="$DEST" "$BIN" validate >/dev/null 2>&1; then
+      pass "the installed skills validate"
+    else
+      bad "the installed skills do not validate"
+    fi
+
+    # Installing again must not clobber what is already there.
+    if SKILLMAN_SKILLS="$DEST" "$BIN" install "file://$REPO" >/dev/null 2>&1; then
+      bad "install overwrote existing skills"
+    else
+      pass "install refuses to clobber an existing skill"
+    fi
+  else
+    echo "skip: git could not make a fixture repository here"
+  fi
+  rm -rf "$REPO" "$FX-install"
+} || echo "skip: git is not installed"
+
 exit "$fail"

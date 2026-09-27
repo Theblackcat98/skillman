@@ -241,10 +241,6 @@ func TestFlagsRejected(t *testing.T) {
 			t.Errorf("run(%v) = %d, want 2", args, got)
 		}
 	}
-	// install is "not built", which is its own exit code.
-	if got := code(func() int { return run([]string{"install", "https://example.com/x"}) }); got != 4 {
-		t.Errorf("install = %d, want 4", got)
-	}
 }
 
 func TestListNames(t *testing.T) {

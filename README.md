@@ -57,7 +57,7 @@ skillman completion zsh  >> ~/.zshrc
 | `trash restore <name>` | Put a trashed skill back under its original name. |
 | `trash purge --older-than 30d \| --all` | Remove trashed skills. Needs an explicit selector. |
 | `completion bash\|zsh` | Print a completion script. |
-| `install <url>` | Not built in this version. Exits 4. |
+| `install <url> [--ref REF] [--dry-run]` | Clone a repository and install the skills it contains. `--dry-run` reports what would be installed and writes nothing. |
 
 Aliases: `ls` for `list`, `show` for `view`, `check` for `validate`, `rm` for `delete`.
 
@@ -104,6 +104,7 @@ from it, and `TestDocsMatchKeymap` fails if this table drifts.
 | `u` | undo a delete, 30s window | `undo` |
 | `v` | validate all skills | `validate` |
 | `r` | rescan the skills directory | `rescan` |
+| `i` | install from a git URL | `install` |
 | `q` | quit from the base layer | `quit` |
 | `Esc` | back one layer | |
 
@@ -266,6 +267,16 @@ error, not three warnings about a file nothing can read.
 The three file codes stay separate on purpose: a missing file, a file
 with bad permissions and a file whose YAML is broken send the reader to
 three different places.
+
+**Install is contained.** `install` never runs a shell: git is exec'd
+with an argv, and a URL is checked against a scheme allowlist first.
+`ext::` is refused by name, because git's remote helper runs a shell
+command and a repository URL is not a trusted input. A clone goes to a
+temp directory that is removed on success, on failure, on cancel and on
+quit. The copy refuses a destination outside the skills directory and
+skips symlinks rather than following them, so a repository cannot use one
+to read or write somewhere the user never named. `--dry-run` clones,
+detects and reports, and writes nothing.
 
 **Bodies are read on demand.** A scan reads the frontmatter of each
 `SKILL.md` and stops; the markdown is read when a skill is previewed or
@@ -449,7 +460,7 @@ The phased plan this project was built from:
 | 2 · Scan and validate | done | Real skills, YAML frontmatter, Glamour preview, badges. |
 | 3 · Filter, palette, help, toasts | done | `/`, `:`, `?`, toasts, layer stack. |
 | 4 · Edit and delete with undo | done | `$EDITOR`, trash, 30s undo, event log. |
-| 5 · Install from GitHub | planned | `i` key, URL prompt, `git clone --depth 1`, candidate checklist. |
+| 5 · Install from a git repository | done | `i` or `install <url>`, a URL allowlist, a shallow clone into a temp directory, a candidate checklist, and a copy that stays inside the skills directory. `--dry-run` reports without writing. |
 | 6 · Hybrid CLI | done | `list`, `view`, `validate`, `delete`, `--help`, non-TTY fallback. |
 | 7 · Core correctness | done | Badges at 80 columns, cursor row, focus keys, `Ctrl-C`, distinct empty states, footer. |
 | 8 · Feedback and lifecycle | done | Timer generations, editor suspend, YAML errors, safe trash lifecycle. |
@@ -476,7 +487,7 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 8 · Config, state, keymap | done | Landed as plan phases 11 and 12. |
 | 9 · Docs | done | README, the `?` overlay, `--help` and the man page all read one set of tables, and a test fails if any of the four drifts. |
 | 10 · Memory and scale | done | The preview render cache is bounded at 24 entries, and a scan reads only the frontmatter of each `SKILL.md` — the body is loaded when a skill is previewed or printed. |
-| 11 · Install from GitHub | planned | Landed as plan phase 5, once the reload path it depends on exists. |
+| 11 · Install from GitHub | done | Landed as plan phase 5. The clone is a command with a timeout, the checklist reports validation state per candidate, and the copy is refused rather than followed outside the skills directory. |
 
 ## Out of scope
 

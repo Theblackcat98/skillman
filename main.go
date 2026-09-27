@@ -64,8 +64,8 @@ var commands = []command{
 	{name: "trash", usage: "list, restore or purge the trash",
 		flags: []string{"--json", "--all", "--older-than"}, arg: "<list|restore|purge>"},
 	{name: "completion", usage: "print a shell completion script", arg: "<bash|zsh>"},
-	{name: "install", usage: "install a skill from a git URL",
-		flags: []string{"--ref"}, arg: "<url>"},
+	{name: "install", usage: "install skills from a git repository",
+		flags: []string{"--ref", "--dry-run"}, arg: "<url>"},
 	{name: "help", usage: "print this help"},
 }
 
@@ -156,6 +156,8 @@ func run(args []string) int {
 		longOut        = false
 		assumeYes      = false
 		purgeAll       = false
+		dryRun         = false
+		installRef     = ""
 		skillsOverride = ""
 		olderThan      = ""
 		positional     []string
@@ -206,9 +208,12 @@ func run(args []string) int {
 		case "--all":
 			purgeAll = true
 			passed["--all"] = true
+		case "--dry-run":
+			dryRun = true
+			passed["--dry-run"] = true
 		case "--":
 			afterDashDash = true
-		case "--skills-dir", "--older-than":
+		case "--skills-dir", "--older-than", "--ref":
 			if i+1 >= len(args) {
 				fmt.Fprintf(os.Stderr, "%s needs a value\n", a)
 				return 2
@@ -222,8 +227,10 @@ func run(args []string) int {
 					return 2
 				}
 				skillsOverride = args[i]
-			} else {
+			} else if a == "--older-than" {
 				olderThan = args[i]
+			} else {
+				installRef = args[i]
 			}
 		default:
 			if v, ok := strings.CutPrefix(a, "--skills-dir="); ok {
@@ -314,9 +321,15 @@ func run(args []string) int {
 			}
 			return runCompletion(positional[1])
 		case "install":
-			// Exit 4, distinct from "destructive action refused".
-			fmt.Fprintln(os.Stderr, "install from a git repository is not built yet")
-			return 4
+			if len(positional) < 2 {
+				fmt.Fprintln(os.Stderr, "install needs a repository URL")
+				return 2
+			}
+			if len(positional) > 2 {
+				fmt.Fprintf(os.Stderr, "install takes one URL; got %d\n", len(positional)-1)
+				return 2
+			}
+			return runInstall(positional[1], installRef, dryRun)
 		case "help":
 			// Only when it is the whole command line: `skillman view
 			// help` must show the skill named help, not this text.

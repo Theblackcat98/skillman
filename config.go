@@ -23,7 +23,7 @@ var overridable = map[string]string{
 	"quit": "q", "help": "?", "filter": "/", "command": ":",
 	"edit": "e", "delete": "d", "undo": "u", "validate": "v",
 	"rescan": "r", "pane": "tab", "top": "g", "bottom": "G",
-	"down": "j", "up": "k",
+	"down": "j", "up": "k", "install": "i",
 }
 
 func overridableNames() string {

@@ -35,6 +35,7 @@ var keyTable = []keyDef{
 	{"undo", "u", "undo a delete, 30s window"},
 	{"validate", "v", "validate all skills"},
 	{"rescan", "r", "rescan the skills directory"},
+	{"install", "i", "install from a git URL"},
 	{"quit", "q", "quit from the base layer"},
 	{"", "Esc", "back one layer"},
 }

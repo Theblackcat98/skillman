@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -47,6 +50,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyFilter()
 		m.sizePanes()
 		return m, nil
+
+	case installClonedMsg:
+		m.installBusy = false
+		if msg.err != nil {
+			// Stay in the flow with the error visible, so the URL can be
+			// corrected and retried without starting over.
+			m.appMode = modeInstallInput
+			m.installURL.Focus()
+			m.installErr = msg.err.Error()
+			return m, m.setToast("install failed: "+msg.err.Error(), true)
+		}
+		m.installErr = ""
+		m.installSrc = msg.src
+		m.installCands = msg.cands
+		m.installIdx = 0
+		if len(msg.cands) == 0 {
+			cmd := m.closeInstall()
+			return m, tea.Batch(cmd, m.setToast("no SKILL.md in that repository", true))
+		}
+		m.appMode = modeInstallPick
+		return m, nil
+
+	case installDoneMsg:
+		m.installBusy = false
+		cleanup := removeTempTree(msg.src)
+		m.installSrc = ""
+		m.installCands = nil
+		m.appMode = modeNormal
+		if msg.err != nil {
+			logf("install: %v", msg.err)
+			return m, tea.Batch(cleanup, m.setToast("install failed: "+msg.err.Error(), true))
+		}
+		if len(msg.res.Installed) > 0 {
+			// Put the cursor on something new so the install is visible
+			// rather than just announced.
+			m.pendingSelection = msg.res.Installed[0]
+		}
+		text := "installed " + strings.Join(msg.res.Installed, ", ")
+		if len(msg.res.Skipped) > 0 {
+			text += fmt.Sprintf(" · skipped %d", len(msg.res.Skipped))
+		}
+		// One reload, through the one path, and only when something landed.
+		if len(msg.res.Installed) == 0 {
+			return m, tea.Batch(cleanup, m.setToast("nothing installed", true))
+		}
+		return m, tea.Batch(cleanup, m.reloadCmd(text))
 
 	case validateMsg:
 		// The list the user is looking at must match the numbers in the
@@ -155,8 +204,67 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Ctrl-C must quit from every layer — filter, command, help, and
 	// confirm otherwise swallow it and the app becomes unkillable (B4).
+	//
+	// Quitting with a clone in flight also removes it: a temp directory
+	// left behind by an install the user abandoned is litter nobody
+	// asked for.
 	if key == "ctrl+c" {
-		return m, tea.Quit
+		return m, tea.Batch(removeTempTree(m.installSrc), tea.Quit)
+	}
+
+	// Install flow. Both modes own their keys completely, so no list
+	// navigation or delete key can reach through them.
+	switch m.appMode {
+	case modeInstallInput:
+		switch key {
+		case "esc":
+			cmd := m.closeInstall()
+			return m, cmd
+		case "enter":
+			cmd := m.startInstall()
+			return m, cmd
+		}
+		var c tea.Cmd
+		m.installURL, c = m.installURL.Update(msg)
+		return m, c
+	case modeInstallPick:
+		switch key {
+		case "esc", "q":
+			cmd := m.closeInstall()
+			return m, cmd
+		case "enter":
+			cmd := m.chooseInstall()
+			return m, cmd
+		case "j", "down":
+			m.moveInstall(1)
+			return m, nil
+		case "k", "up":
+			m.moveInstall(-1)
+			return m, nil
+		case " ", "x":
+			m.toggleInstall()
+			return m, nil
+		case "a":
+			// Toggle all, which is the common case for a repo of skills
+			// the user wants wholesale.
+			all := true
+			for _, c := range m.installCands {
+				if !c.Selected {
+					all = false
+				}
+			}
+			for i := range m.installCands {
+				m.installCands[i].Selected = !all
+			}
+			return m, nil
+		case "g", "home":
+			m.installIdx = 0
+			return m, nil
+		case "G", "end":
+			m.installIdx = len(m.installCands) - 1
+			return m, nil
+		}
+		return m, nil
 	}
 
 	// Help overlay: Esc/?/q/Enter closes, everything else scrolls. The
@@ -317,6 +425,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case "r":
 		cmd := m.reloadCmd("")
+		return m, cmd
+	case "i":
+		cmd := m.openInstallInput()
 		return m, cmd
 	case "esc":
 		if m.query != "" {
@@ -511,5 +622,125 @@ func (m *Model) runCommand(cmd string) tea.Cmd {
 			return nil
 		}
 		return toastCmd("unknown command: "+cmd, true)
+	}
+}
+
+// --- install ---
+
+// openInstallInput is the `i` key: a URL prompt, nothing else. The clone
+// does not start until the URL is submitted, so a half-typed URL costs
+// nothing.
+func (m *Model) openInstallInput() tea.Cmd {
+	m.appMode = modeInstallInput
+	m.installURL.SetValue("")
+	m.installURL.Focus()
+	return nil
+}
+
+// closeInstall leaves the install flow and removes the temp clone. The
+// clone is a real directory on disk, so cancelling has to clean it up
+// rather than leave it for the next boot.
+func (m *Model) closeInstall() tea.Cmd {
+	cmd := removeTempTree(m.installSrc)
+	m.installSrc = ""
+	m.installCands = nil
+	m.installIdx = 0
+	m.installBusy = false
+	m.installURL.Blur()
+	m.installURL.SetValue("")
+	m.appMode = modeNormal
+	return cmd
+}
+
+// startInstall validates the URL and clones. The clone runs in a command
+// with a timeout, so a repository that never answers cannot wedge the UI,
+// and Ctrl-C still quits because it is handled before any mode.
+func (m *Model) startInstall() tea.Cmd {
+	raw := strings.TrimSpace(m.installURL.Value())
+	url, err := validateGitURL(raw)
+	if err != nil {
+		m.installURL.SetValue("")
+		return toastCmd("install: "+err.Error(), true)
+	}
+	ref, err := validateRef(m.installRef)
+	if err != nil {
+		m.installURL.SetValue("")
+		return toastCmd("install: "+err.Error(), true)
+	}
+	m.installBusy = true
+	m.installURL.Blur()
+	ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)
+	return tea.Batch(
+		func() tea.Msg {
+			defer cancel()
+			src, cerr := cloneRepo(ctx, url, ref)
+			if cerr != nil {
+				return installClonedMsg{err: cerr}
+			}
+			cands, ferr := findCandidates(filepath.Join(src, "repo"))
+			if ferr != nil {
+				os.RemoveAll(src)
+				return installClonedMsg{err: ferr}
+			}
+			return installClonedMsg{src: src, cands: cands}
+		},
+		m.spinner.Tick,
+	)
+}
+
+// chooseInstall copies the ticked candidates and reloads. The clone is
+// removed either way: it is a staging area, not a cache.
+func (m *Model) chooseInstall() tea.Cmd {
+	if len(m.installCands) == 0 {
+		return m.closeInstall()
+	}
+	src, cands := m.installSrc, append([]installCandidate(nil), m.installCands...)
+	from := ""
+	if sel := m.selected(); sel != nil {
+		from = sel.Name
+	}
+	m.installBusy = true
+	return tea.Batch(
+		func() tea.Msg {
+			res, err := install(cands, filepath.Join(src, "repo"), false)
+			return installDoneMsg{res: res, src: src, err: err, from: from}
+		},
+		m.spinner.Tick,
+	)
+}
+
+func (m *Model) toggleInstall() {
+	if m.installIdx < 0 || m.installIdx >= len(m.installCands) {
+		return
+	}
+	c := &m.installCands[m.installIdx]
+	c.Selected = !c.Selected
+}
+
+func (m *Model) moveInstall(d int) {
+	if len(m.installCands) == 0 {
+		return
+	}
+	m.installIdx += d
+	if m.installIdx < 0 {
+		m.installIdx = 0
+	}
+	if m.installIdx >= len(m.installCands) {
+		m.installIdx = len(m.installCands) - 1
+	}
+}
+
+// removeTempTree deletes a temp clone. It runs as a command so the
+// directory removal is not on the update path.
+func removeTempTree(dir string) tea.Cmd {
+	if dir == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := os.RemoveAll(dir); err != nil {
+			logf("install cleanup: %v", err)
+			return installClonedMsg{err: fmt.Errorf("could not clean up %s: %w", dir, err)}
+		}
+		return nil
 	}
 }

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -310,6 +312,26 @@ func runTrash(args []string, jsonOut, all bool, age string) int {
 	}
 }
 
+// completionCommands is the command list the completion scripts offer.
+// It was a literal string in each script — a fourth copy of the command
+// list, which install made stale the moment it was added. The scripts
+// carry a placeholder and the word list is substituted at print time, so
+// the scripts and the table cannot disagree.
+var completionCommands = func() string {
+	names := make([]string, 0, len(commands))
+	for _, c := range commands {
+		if c.name == "help" {
+			continue // the scripts offer --help themselves
+		}
+		names = append(names, c.name)
+	}
+	return strings.Join(names, " ")
+}()
+
+func withCommands(script string) string {
+	return strings.ReplaceAll(script, "$SKILLMAN_COMMANDS", completionCommands)
+}
+
 const bashCompletion = `# bash completion for skillman
 _skillman() {
   local cur prev
@@ -333,7 +355,7 @@ _skillman() {
   if [[ "$cur" == -* ]]; then
     COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
   else
-    COMPREPLY=( $(compgen -W "list view validate delete trash completion" -- "$cur") )
+    COMPREPLY=( $(compgen -W "$SKILLMAN_COMMANDS" -- "$cur") )
   fi
 }
 complete -F _skillman skillman
@@ -352,7 +374,7 @@ _skillman() {
     '--yes[assume yes for destructive actions]' \
     '--names[print one skill name per line]' \
     '--skills-dir=[override the skills directory]:dir:_files -/' \
-    '1:command:(list view validate delete trash completion)' \
+    '1:command:($SKILLMAN_COMMANDS)' \
     '*:file:_files'
   case "$words[2]" in
     view|delete)
@@ -367,12 +389,79 @@ _skillman() {
 compdef _skillman skillman
 `
 
+// runInstall clones a repository, reports the skills it found, and copies
+// the chosen ones. --dry-run stops after the report, so the whole path can
+// be exercised without writing anything.
+func runInstall(url, ref string, dryRun bool) int {
+	cleanURL, err := validateGitURL(url)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "install: "+err.Error())
+		return 2
+	}
+	cleanRef, err := validateRef(ref)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "install: "+err.Error())
+		return 2
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)
+	defer cancel()
+
+	dir, err := cloneRepo(ctx, cleanURL, cleanRef)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "install: "+err.Error())
+		if errors.Is(err, context.DeadlineExceeded) {
+			return 1
+		}
+		return 1
+	}
+	// The clone is a temporary artefact whatever happens next.
+	defer os.RemoveAll(dir)
+
+	cands, err := findCandidates(filepath.Join(dir, "repo"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "install: "+err.Error())
+		return 1
+	}
+	if len(cands) == 0 {
+		fmt.Fprintln(os.Stderr, "install: no SKILL.md found in "+cleanURL)
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "%d skill(s) in %s:\n", len(cands), cleanURL)
+	for _, c := range cands {
+		state := "ok"
+		if !c.Valid {
+			state = "invalid"
+		}
+		fmt.Fprintf(os.Stderr, "  %-24s %-8s %s\n", c.Name, state, c.Desc)
+	}
+
+	res, err := install(cands, filepath.Join(dir, "repo"), dryRun)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "install: "+err.Error())
+		return 1
+	}
+	for _, s := range res.Skipped {
+		fmt.Fprintln(os.Stderr, "skipped "+s)
+	}
+	if dryRun {
+		fmt.Fprintf(os.Stderr, "dry run: would install %s\n",
+			strings.Join(res.Installed, ", "))
+		return 0
+	}
+	if len(res.Installed) == 0 {
+		fmt.Fprintln(os.Stderr, "install: nothing was installed")
+		return 1
+	}
+	fmt.Printf("installed %s\n", strings.Join(res.Installed, ", "))
+	return 0
+}
+
 func runCompletion(shell string) int {
 	switch shell {
 	case "bash":
-		fmt.Print(bashCompletion)
+		fmt.Print(withCommands(bashCompletion))
 	case "zsh":
-		fmt.Print(zshCompletion)
+		fmt.Print(withCommands(zshCompletion))
 	default:
 		fmt.Fprintln(os.Stderr, "completion needs bash or zsh")
 		return 2

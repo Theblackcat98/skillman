@@ -15,10 +15,10 @@ SkillMan  20/20 skills                                            ?help  /search
   |u            undo a delete, 30s window                                    |  
   |v            validate all skills                                          |  
   |r            rescan the skills directory                                  |  
+  |i            install from a git URL                                       |  
   |q            quit from the base layer                                     |  
   |Esc          back one layer                                               |  
   |                                                                          |  
   |Respects NO_COLOR, TERM=dumb, NO_ANIMATIONS, REDUCED_MOTION, CI.          |  
   +--------------------------------------------------------------------------+  
-skill-04 · Test skill number 04  |  help                                        
 j/k scroll · esc ? q close                                                      

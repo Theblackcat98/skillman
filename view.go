@@ -29,6 +29,10 @@ func (m Model) View() string {
 		return m.renderConfirmModal(view)
 	case modeConfirmCreate:
 		return m.renderCreateModal(view)
+	case modeInstallInput:
+		return m.renderInstallInput(view)
+	case modeInstallPick:
+		return m.renderInstallPick(view)
 	}
 	return view
 }
@@ -218,6 +222,10 @@ func (m Model) renderStatus() string {
 		mod = "confirm create"
 	case modeHelp:
 		mod = "help"
+	case modeInstallInput:
+		mod = "install url"
+	case modeInstallPick:
+		mod = "install pick"
 	}
 	if m.focusPreview {
 		mod += " · preview-focus"
@@ -289,6 +297,10 @@ func (m Model) renderFooter() string {
 		hints = "y confirm · n cancel"
 	case modeHelp:
 		hints = "j/k scroll · esc ? q close"
+	case modeInstallInput:
+		hints = "enter clone · esc cancel"
+	case modeInstallPick:
+		hints = "space tick · a all · enter install · esc cancel"
 	default:
 		// The full keymap lives in the ? overlay; the footer only has
 		// to name the keys that fit.
@@ -614,4 +626,75 @@ func stripANSI(s string) string {
 		i++
 	}
 	return b.String()
+}
+
+// renderInstallInput is the `i` URL prompt. It names what is about to
+// happen, because "url:" alone gives the user nothing to judge.
+func (m Model) renderInstallInput(under string) string {
+	body := "Clone a repository and pick\nthe skills to install."
+	if m.installErr != "" {
+		body = m.installErr + "\n\nClone a repository and pick\nthe skills to install."
+	}
+	if m.installBusy {
+		body = "cloning…  esc to cancel"
+	}
+	w := 52
+	if w > m.width-4 {
+		w = m.width - 4
+	}
+	h := strings.Count(body, "\n") + 5
+	modal := box("install", body+"\n"+m.installURL.View(), w, h, true, m.theme, m.plain)
+	return m.overlay(under, modal, m.width, m.height)
+}
+
+// renderInstallPick is the checklist. Every row says whether its
+// SKILL.md is usable, so ticking an invalid skill is a choice rather than
+// a surprise later.
+func (m Model) renderInstallPick(under string) string {
+	var b strings.Builder
+	for i, c := range m.installCands {
+		mark := " "
+		if c.Selected {
+			mark = "x"
+		}
+		ptr := "  "
+		if i == m.installIdx {
+			ptr = "> "
+		}
+		state := ""
+		if !c.Valid {
+			state = " invalid"
+		}
+		b.WriteString(ptr + "[" + mark + "] " + padRight(truncRunes(c.Name, 18), 18) + state)
+		if c.Desc != "" && lipWidth(c.Desc) < 24 {
+			b.WriteString("  " + c.Desc)
+		}
+		b.WriteString("\n")
+	}
+	n := len(m.installCands)
+	title := fmt.Sprintf("install · %d found · %d ticked", n, tickedCount(m.installCands))
+	modal := box(title, strings.TrimRight(b.String(), "\n"), m.installModalW(), n+4, true, m.theme, m.plain)
+	return m.overlay(under, modal, m.width, m.height)
+}
+
+func tickedCount(cands []installCandidate) int {
+	n := 0
+	for _, c := range cands {
+		if c.Selected {
+			n++
+		}
+	}
+	return n
+}
+
+// installModalW fits the checklist, which has to hold a name and a state.
+func (m Model) installModalW() int {
+	w := 60
+	if w > m.width-4 {
+		w = m.width - 4
+	}
+	if w < 12 {
+		w = 12
+	}
+	return w
 }

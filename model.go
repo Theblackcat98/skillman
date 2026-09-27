@@ -23,6 +23,10 @@ const (
 	// modeConfirmCreate gates creating a SKILL.md that does not exist
 	// yet, so `e` never writes a file the user did not ask for.
 	modeConfirmCreate
+	// modeInstallInput takes a repository URL, modeInstallPick chooses
+	// which of the skills it contains to install.
+	modeInstallInput
+	modeInstallPick
 )
 
 type skillsLoadedMsg struct {
@@ -43,6 +47,24 @@ type undoExpireMsg struct{ seq int }
 // scheduled by the model, so the edit path and every other reload share
 // one code path.
 type editedMsg struct{ name string }
+
+// installClonedMsg says the clone finished and what it found. An error
+// here is shown in the picker rather than a toast, so the user can fix
+// the URL and retry without losing their place.
+type installClonedMsg struct {
+	src   string
+	cands []installCandidate
+	err   error
+}
+
+// installDoneMsg reports the copy. src is the temp clone, which is
+// removed whichever way this went.
+type installDoneMsg struct {
+	res  installResult
+	src  string
+	err  error
+	from string
+}
 
 // validateMsg carries the rescan from `v` back into the model, so the
 // list badges and the summary come from one scan (review F9). It used to
@@ -136,6 +158,16 @@ type Model struct {
 
 	undo pendingUndo
 
+	// Install flow. installSrc is a temp clone that has to be removed on
+	// cancel and on quit, so it is tracked rather than left to the OS.
+	installURL   textinput.Model
+	installRef   string
+	installCands []installCandidate
+	installIdx   int
+	installSrc   string
+	installBusy  bool
+	installErr   string
+
 	// Per-skill preview scroll, so moving the list cursor does not throw
 	// away where the reader was, and the positions survive a restart.
 	scroll           map[string]int
@@ -159,8 +191,13 @@ func NewModel(plain, noAnim bool, cfg Config) Model {
 
 	ci := textinput.New()
 	ci.Prompt = ":"
-	ci.Placeholder = "edit|delete|validate|reload|quit|help"
+	ci.Placeholder = "edit|delete|validate|reload|clear|quit|help"
 	ci.CharLimit = 80
+
+	iu := textinput.New()
+	iu.Prompt = "url"
+	iu.Placeholder = "https://github.com/owner/repo"
+	iu.CharLimit = 200
 
 	sp := spinner.New()
 	sp.Spinner.FPS = 12
@@ -170,7 +207,8 @@ func NewModel(plain, noAnim bool, cfg Config) Model {
 	return Model{
 		theme: th, cfg: cfg, plain: plain, noAnim: noAnim,
 		loading: true,
-		preview: vp, helpVP: vp, filter: ti, cmdline: ci, spinner: sp,
+		preview: vp, helpVP: vp, filter: ti, cmdline: ci,
+		installURL: iu, spinner: sp,
 		width: 80, height: 24,
 		previewCache: map[string]string{},
 		scroll:       map[string]int{},

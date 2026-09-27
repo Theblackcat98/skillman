@@ -52,7 +52,7 @@ func manPage() string {
 	w("\\fIbash|zsh\\fR")
 	w(".br")
 	w(".B skillman install")
-	w("\\fIURL\\fR [\\fB\\-\\-ref\\fR \\fIREF\\fR]")
+	w("\\fIURL\\fR [\\fB\\-\\-ref\\fR \\fIREF\\fR] [\\fB\\-\\-dry\\-run\\fR]")
 
 	w(".SH DESCRIPTION")
 	w("Browse, preview, validate, edit and trash-delete skills in the")
@@ -111,6 +111,10 @@ func manPage() string {
 		w(".B " + roffEscape(k.Keys))
 		w(roffEscape(k.Desc) + rebindNote(k.Action))
 	}
+
+	w(".PP")
+	w("The install checklist: j/k move, space ticks one, a ticks all, g/G")
+	w("jump, enter installs, esc cancels and removes the clone.")
 
 	w(".SH EXIT STATUS")
 	for _, e := range exitCodeDoc {

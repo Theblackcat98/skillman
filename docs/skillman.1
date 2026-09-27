@@ -26,7 +26,7 @@ skillman \- manage opencode skills
 \fIbash|zsh\fR
 .br
 .B skillman install
-\fIURL\fR [\fB\-\-ref\fR \fIREF\fR]
+\fIURL\fR [\fB\-\-ref\fR \fIREF\fR] [\fB\-\-dry\-run\fR]
 .SH DESCRIPTION
 Browse, preview, validate, edit and trash-delete skills in the
 opencode skills directory. With no command and a terminal it starts
@@ -58,7 +58,7 @@ list, restore or purge the trash
 print a shell completion script
 .TP
 .B install <url>
-install a skill from a git URL
+install skills from a git repository
 .TP
 .B help
 print this help
@@ -134,11 +134,17 @@ validate all skills Rebindable as validate.
 .B r
 rescan the skills directory Rebindable as rescan.
 .TP
+.B i
+install from a git URL Rebindable as install.
+.TP
 .B q
 quit from the base layer Rebindable as quit.
 .TP
 .B Esc
 back one layer
+.PP
+The install checklist: j/k move, space ticks one, a ticks all, g/G
+jump, enter installs, esc cancels and removes the clone.
 .SH EXIT STATUS
 .TP
 .B 0
