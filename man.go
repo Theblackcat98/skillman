@@ -130,16 +130,26 @@ func manPage() string {
 		w(roffEscape(e.Effect))
 	}
 
+	// The FILES section documents the paths, not this machine's copy of
+	// them. The generated file is checked in, so resolving the paths here
+	// would bake the generator's home directory into a published page.
 	w(".SH FILES")
+	w(".PP")
+	w("Resolved from $XDG_CONFIG_HOME and $XDG_DATA_HOME, falling back to")
+	w("the home directory. The exact paths are printed by")
+	w(".B skillman \\-help")
 	w(".TP")
-	w(".B " + configPath())
+	w(".B $XDG_CONFIG_HOME/skillman/config.yaml")
 	w("Configuration: skills_dir, accent, and key bindings.")
 	w(".TP")
-	w(".B " + statePath())
+	w(".B $XDG_CONFIG_HOME/skillman/state.json")
 	w("Session state: last selection, preview scroll, pane focus.")
 	w(".TP")
-	w(".B " + trashDir())
+	w(".B $XDG_DATA_HOME/skillman/trash")
 	w("Deleted skills, restorable with skillman trash restore.")
+	w(".TP")
+	w(".B $XDG_DATA_HOME/skillman/skillman.log")
+	w("Event log, appended to when skillman reports an error.")
 
 	w(".SH SEE ALSO")
 	w("The project README is the full documentation and the single source")

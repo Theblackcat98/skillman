@@ -196,15 +196,22 @@ set: no spinner, no transitions
 .B CI
 set: no spinner, no transitions
 .SH FILES
+.PP
+Resolved from $XDG_CONFIG_HOME and $XDG_DATA_HOME, falling back to
+the home directory. The exact paths are printed by
+.B skillman \-help
 .TP
-.B /data/data/com.termux/files/home/.config/skillman/config.yaml
+.B $XDG_CONFIG_HOME/skillman/config.yaml
 Configuration: skills_dir, accent, and key bindings.
 .TP
-.B /data/data/com.termux/files/home/.config/skillman/state.json
+.B $XDG_CONFIG_HOME/skillman/state.json
 Session state: last selection, preview scroll, pane focus.
 .TP
-.B /data/data/com.termux/files/home/.local/share/skillman/trash
+.B $XDG_DATA_HOME/skillman/trash
 Deleted skills, restorable with skillman trash restore.
+.TP
+.B $XDG_DATA_HOME/skillman/skillman.log
+Event log, appended to when skillman reports an error.
 .SH SEE ALSO
 The project README is the full documentation and the single source
 of truth for the tables above.

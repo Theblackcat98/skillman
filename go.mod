@@ -1,4 +1,4 @@
-module skillman
+module github.com/Theblackcat98/skillman
 
 // The minimum Go version CI tests against. The `go` line is that floor;
 // the `toolchain` line is what new checkouts use.
