@@ -21,7 +21,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.ready = true
 		m.sizePanes()
-		m.refreshPreview()
+		// Keep the reader's scroll position across resize (B16 polish).
+		m.refreshPreviewAt(false)
 		return m, nil
 
 	case skillsLoadedMsg:

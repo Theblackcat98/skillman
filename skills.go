@@ -147,6 +147,22 @@ func firstLine(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// metaLine renders frontmatter metadata (category · license ·
+// compatibility) for the preview header; empty fields are skipped.
+func (s Skill) metaLine() string {
+	parts := make([]string, 0, 3)
+	if s.Category != "" {
+		parts = append(parts, s.Category)
+	}
+	if s.License != "" {
+		parts = append(parts, "license: "+s.License)
+	}
+	if s.Compat != "" {
+		parts = append(parts, "compat: "+s.Compat)
+	}
+	return strings.Join(parts, " · ")
+}
+
 // FilterSkills matches query against name+desc+category (case-insensitive).
 func FilterSkills(skills []Skill, query string) []Skill {
 	q := strings.ToLower(strings.TrimSpace(query))

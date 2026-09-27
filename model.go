@@ -2,6 +2,7 @@ package main
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -151,12 +152,22 @@ func (m *Model) applyFilter() {
 }
 
 func (m *Model) refreshPreview() {
+	m.refreshPreviewAt(true)
+}
+
+// refreshPreviewAt reloads the preview content. reset=true scrolls to
+// top (the selection changed); reset=false keeps the current offset so
+// a resize never throws away the reader's position.
+func (m *Model) refreshPreviewAt(reset bool) {
 	sel := m.selected()
 	w := m.previewWidth()
 	if sel == nil {
-		if len(m.skills) == 0 {
+		switch {
+		case m.loading:
+			m.preview.SetContent("scanning…")
+		case len(m.skills) == 0:
 			m.preview.SetContent("(no skills in " + skillsDir() + ") — r rescans")
-		} else {
+		default:
 			// A query is active and matched nothing (B7).
 			m.preview.SetContent("(no match for /" + m.query + ") — esc clears the filter")
 		}
@@ -164,7 +175,9 @@ func (m *Model) refreshPreview() {
 		return
 	}
 	m.preview.SetContent(m.cachedPreview(*sel, w))
-	m.preview.GotoTop()
+	if reset {
+		m.preview.GotoTop()
+	}
 }
 
 // invalidatePreview drops cached renders. Called on every rescan so edits,
@@ -180,8 +193,26 @@ func (m *Model) cachedPreview(s Skill, w int) string {
 	if text, ok := m.previewCache[key]; ok {
 		return text
 	}
-	header := s.Name + "\n" + s.Desc + "\n\n"
-	text := header + s.renderPreviewWith(m.sharedRenderer(w), m.plain)
+	// Banner: identity, description, frontmatter metadata, then any
+	// validation issues. Validation problems must be visible even when
+	// the body renders cleanly.
+	var head strings.Builder
+	head.WriteString("# " + s.Name + "\n\n")
+	if s.Desc != "" {
+		head.WriteString(s.Desc + "\n\n")
+	}
+	if meta := s.metaLine(); meta != "" {
+		head.WriteString(meta + "\n\n")
+	}
+	if len(s.Issues) > 0 {
+		head.WriteString("## Issues\n\n")
+		for _, is := range s.Issues {
+			head.WriteString("- " + is + "\n")
+		}
+		head.WriteString("\n")
+	}
+	head.WriteString("---\n\n")
+	text := head.String() + s.renderPreviewWith(m.sharedRenderer(w), m.plain)
 	if m.previewCache == nil {
 		m.previewCache = map[string]string{}
 	}
@@ -209,11 +240,26 @@ func (m *Model) sharedRenderer(w int) *glamour.TermRenderer {
 	return m.glam
 }
 
-func (m *Model) previewWidth() int {
-	w := m.width/2 - 6
+// paneW returns the list and preview pane widths for the current terminal
+// width. Layout (View) and sizing (previewWidth) must agree: the glamour
+// wrap width has to equal the box interior or the preview reflows as the
+// selection changes. Duplicated layout constants caused audit B2.
+func (m Model) paneW() (listW, prevW int) {
 	if m.width < 70 {
-		w = m.width - 6
+		// Narrow: one pane at a time, full width.
+		return m.width, m.width
 	}
+	// joinH puts a single space between the panes, so the panes plus the
+	// gap must add up to exactly m.width for a flush frame.
+	listW = (m.width - 1) / 2
+	prevW = m.width - 1 - listW
+	return listW, prevW
+}
+
+func (m *Model) previewWidth() int {
+	_, prevW := m.paneW()
+	// box() draws "| content |", so the interior is 2 cells narrower.
+	w := prevW - 2
 	if w < 20 {
 		w = 20
 	}
@@ -235,8 +281,12 @@ func (m *Model) setToast(text string, isErr bool) tea.Cmd {
 // mainBoxH is the height of the list/preview box. Layout (View) and
 // sizing (sizePanes) must share this one number — duplicated constants
 // drifted before and produced the off-by-one in audit B2.
+//
+// The frame is header + box + status + footer, so the box takes the
+// remaining rows exactly. The old height-4 left one row permanently
+// unused (audit B16).
 func (m Model) mainBoxH() int {
-	h := m.height - 6 // header + status + footer + one line of slack
+	h := m.height - 3
 	if h < 5 {
 		h = 5
 	}

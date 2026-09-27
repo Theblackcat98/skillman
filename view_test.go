@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func makeSkills(n int) []Skill {
@@ -129,4 +132,270 @@ func TestPreviewHeightMatchesBox(t *testing.T) {
 	if m.preview.Height != contentH(m.mainBoxH()) {
 		t.Errorf("preview.Height=%d, want contentH(mainBoxH())=%d", m.preview.Height, contentH(m.mainBoxH()))
 	}
+}
+
+// Phase 10: the frame must use every row and never exceed the width,
+// at every supported size, in both colour modes.
+func TestFrameFillsTerminal(t *testing.T) {
+	sizes := [][2]int{{20, 10}, {36, 12}, {50, 20}, {69, 24}, {70, 24}, {80, 24}, {120, 40}}
+	for _, sz := range sizes {
+		for _, plain := range []bool{false, true} {
+			m := newTestModel(t, sz[0], sz[1], plain)
+			m.cursor = 6
+			m.refreshPreview()
+			lines := strings.Split(m.View(), "\n")
+			if len(lines) != sz[1] {
+				t.Errorf("%dx%d plain=%v: rendered %d lines, want %d", sz[0], sz[1], plain, len(lines), sz[1])
+			}
+			assertLinesFit(t, m.View(), sz[0])
+		}
+	}
+}
+
+// Phase 10 / audit B16: the header was composed but never truncated, so
+// a narrow terminal wrapped the whole frame.
+func TestHeaderFitsNarrow(t *testing.T) {
+	for _, w := range []int{20, 30, 36, 40, 55} {
+		m := newTestModel(t, w, 24, false)
+		head := strings.Split(m.View(), "\n")[0]
+		if lipWidth(head) > w {
+			t.Errorf("header %d cols at width %d: %q", lipWidth(head), w, head)
+		}
+	}
+}
+
+// Phase 10 / audit B9: the footer used a fixed 70-col breakpoint that
+// cut "? help · q quit" away at exactly 70.
+func TestFooterKeepsQuitHint(t *testing.T) {
+	for _, w := range []int{20, 40, 60, 69, 70, 71, 80, 120} {
+		m := newTestModel(t, w, 24, false)
+		lines := strings.Split(m.View(), "\n")
+		footer := lines[len(lines)-1]
+		if !strings.Contains(footer, "q quit") {
+			t.Errorf("footer lost q quit at width %d: %q", w, footer)
+		}
+	}
+}
+
+// Phase 10: the list title carries the scroll position.
+func TestListTitleShowsPosition(t *testing.T) {
+	m := newTestModel(t, 80, 24, false)
+	m.cursor = 0
+	m.applyFilter()
+	if got := strings.Split(m.View(), "\n")[1]; !strings.Contains(got, "1–18/20") {
+		t.Errorf("list title missing scroll position: %q", got)
+	}
+	m.cursor = 19
+	m.refreshPreview()
+	// 18 rows fit, so the last 18 of 20 are shown: 3–20.
+	if got := strings.Split(m.View(), "\n")[1]; !strings.Contains(got, "3–20/20") {
+		t.Errorf("list title wrong position at bottom: %q", got)
+	}
+}
+
+// Phase 10: the active query must not be printed twice.
+func TestFilterPromptNotDuplicated(t *testing.T) {
+	m := newTestModel(t, 80, 24, false)
+	m.query = "skill-0"
+	m.filter.SetValue("skill-0")
+	m.applyFilter()
+	lines := strings.Split(m.View(), "\n")
+	status := lines[len(lines)-2]
+	if n := strings.Count(status, "/skill-0"); n != 1 {
+		t.Errorf("query printed %d times in status line: %q", n, status)
+	}
+	if strings.Contains(lines[1], "/skill-0") {
+		t.Errorf("query duplicated in list title: %q", lines[1])
+	}
+}
+
+// Phase 10: the preview banner carries metadata and validation issues.
+func TestPreviewBanner(t *testing.T) {
+	m := newTestModel(t, 80, 24, false)
+	m.skills[0].License = "MIT"
+	m.skills[0].Compat = "any"
+	m.skills[0].Category = "analysis"
+	m.skills[0].Issues = []string{"missing description"}
+	m.invalidatePreview()
+	m.applyFilter()
+	view := m.View()
+	for _, want := range []string{"skill-01", "license: MIT", "compat: any", "analysis", "missing description"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("preview banner missing %q", want)
+		}
+	}
+}
+
+// Phase 10 / audit B11: modals composite over a dimmed background, keep
+// the frame size, and drop the contradictory "--- [Esc] close ---" line.
+func TestOverlayComposites(t *testing.T) {
+	for _, mode := range []mode{modeHelp, modeConfirm} {
+		for _, sz := range [][2]int{{50, 20}, {80, 24}} {
+			m := newTestModel(t, sz[0], sz[1], false)
+			m.appMode = mode
+			view := m.View()
+			lines := strings.Split(view, "\n")
+			if len(lines) != sz[1] {
+				t.Errorf("mode %d at %dx%d: %d lines, want %d", mode, sz[0], sz[1], len(lines), sz[1])
+			}
+			assertLinesFit(t, view, sz[0])
+			if strings.Contains(view, "--- [Esc] close ---") {
+				t.Errorf("mode %d still appends the close line (B11)", mode)
+			}
+			// The background is still on screen behind the modal.
+			if !strings.Contains(view, "SkillMan") {
+				t.Errorf("mode %d blanked the background (B11)", mode)
+			}
+		}
+	}
+}
+
+// Phase 10: the help key table is complete and nothing is cut at 80x24.
+func TestHelpKeyTableComplete(t *testing.T) {
+	m := newTestModel(t, 80, 24, false)
+	m.appMode = modeHelp
+	view := stripANSI(m.View())
+	for _, want := range []string{"move selection", "top / bottom", "switch pane", "H / ?", "filter", "command:", "$EDITOR", "delete to trash", "validate all", "back one layer"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("help overlay missing %q", want)
+		}
+	}
+}
+
+// Phase 10: a long body must reach its last line, and a resize must not
+// throw the reader back to the top.
+func TestPreviewScrollsToEndAndSurvivesResize(t *testing.T) {
+	m := longBodyModel(t, 80, 24)
+	send(t, &m, tea.KeyMsg{Type: tea.KeyTab}) // focus preview
+	send(t, &m, keyPress('G'))
+	if !m.preview.AtBottom() {
+		t.Fatalf("G did not reach the end of the body: offset %d", m.preview.YOffset)
+	}
+	if !strings.Contains(m.preview.View(), "line 120") {
+		t.Errorf("last body line not visible after G: %q", m.preview.View())
+	}
+	before := m.preview.YOffset
+	send(t, &m, tea.KeyMsg{Type: tea.KeyTab}) // back to the list, then resize
+	send(t, &m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	if m.preview.YOffset == 0 && before != 0 {
+		t.Errorf("resize reset preview scroll %d -> %d", before, m.preview.YOffset)
+	}
+	if !m.preview.AtBottom() {
+		t.Errorf("resize lost the end of the body: offset %d", m.preview.YOffset)
+	}
+}
+
+// Phase 10 / audit A1: width must be counted in terminal cells. Counting
+// runes pushed the box borders off the right edge for CJK and emoji
+// names, which destroyed the whole frame.
+func TestWideCharacterRowsKeepFrame(t *testing.T) {
+	names := []string{"日本語スキル名", "skill🎉🎉🎉", "Ωmega-skill", "a"}
+	for _, size := range [][2]int{{80, 24}, {50, 20}, {20, 10}} {
+		for _, plain := range []bool{false, true} {
+			m := newTestModel(t, size[0], size[1], plain)
+			m.skills = makeSkills(4)
+			for i := range m.skills {
+				m.skills[i].Name = names[i]
+				m.skills[i].Category = "日本語"
+			}
+			m.invalidatePreview()
+			m.applyFilter()
+			for _, mode := range []mode{modeNormal, modeHelp, modeConfirm} {
+				m.appMode = mode
+				view := m.View()
+				lines := strings.Split(view, "\n")
+				if len(lines) != size[1] {
+					t.Errorf("%dx%d mode %d: %d lines, want %d", size[0], size[1], mode, len(lines), size[1])
+				}
+				for i, ln := range lines {
+					if lipWidth(ln) > size[0] {
+						t.Errorf("%dx%d mode %d line %d: %d cells > %d: %q",
+							size[0], size[1], mode, i+1, lipWidth(ln), size[0], stripANSI(ln))
+					}
+					if !utf8.ValidString(ln) {
+						t.Errorf("%dx%d mode %d line %d: invalid UTF-8 %q",
+							size[0], size[1], mode, i+1, ln)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Cut cells must never land inside an escape sequence.
+func TestTruncateKeepsEscapesIntact(t *testing.T) {
+	styled := "\x1b[1;38;5;189mhello world\x1b[0m"
+	got := truncate(styled, 8)
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("no ellipsis: %q", got)
+	}
+	if strings.Count(got, "\x1b")%2 != 0 {
+		t.Errorf("escape sequence split: %q", got)
+	}
+	if lipWidth(got) > 8 {
+		t.Errorf("width %d > 8: %q", lipWidth(got), got)
+	}
+}
+
+func TestSkipEscapeForms(t *testing.T) {
+	cases := map[string]int{
+		"\x1b[31m":           5, // CSI
+		"\x1b[1;38;5;1m":     11,
+		"\x1b]0;title\x07":   10, // OSC with BEL
+		"\x1b]8;;http\x1b\\": 11, // OSC with ST
+		"\x1bM":              2,  // two-character
+	}
+	for seq, want := range cases {
+		if got := skipEscape(seq, 0); got != want {
+			t.Errorf("skipEscape(%q) = %d, want %d", seq, got, want)
+		}
+		if stripANSI(seq) != "" {
+			t.Errorf("stripANSI(%q) = %q", seq, stripANSI(seq))
+		}
+	}
+}
+
+func TestLipWidthCountsCells(t *testing.T) {
+	cases := map[string]int{
+		"abc":              3,
+		"日本語":              6,
+		"🎉":                2,
+		"\x1b[1mab\x1b[0m": 2,
+	}
+	for s, want := range cases {
+		if got := lipWidth(s); got != want {
+			t.Errorf("lipWidth(%q) = %d, want %d", s, got, want)
+		}
+	}
+}
+
+// longBodyModel is a model with one skill whose body has 120 lines.
+func longBodyModel(t *testing.T, w, h int) Model {
+	t.Helper()
+	m := NewModel(false, true)
+	var body strings.Builder
+	for i := 1; i <= 120; i++ {
+		fmt.Fprintf(&body, "line %d of the long body\n", i)
+	}
+	m.skills = []Skill{{
+		Name:   "longbody",
+		Desc:   "A skill with a very long body for scroll tests",
+		Body:   body.String(),
+		Dir:    "/nonexistent/longbody",
+		Issues: []string{"missing description"},
+	}}
+	send(t, &m, tea.WindowSizeMsg{Width: w, Height: h})
+	m.loading = false
+	m.applyFilter()
+	return m
+}
+
+func send(t *testing.T, m *Model, msg tea.Msg) {
+	t.Helper()
+	mm, _ := m.Update(msg)
+	*m = mm.(Model)
+}
+
+func keyPress(r rune) tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
 }
