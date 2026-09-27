@@ -130,7 +130,7 @@ func FuzzScanSurvivesOddTrees(f *testing.F) {
 			if hasControlByte(s.Desc) {
 				t.Errorf("desc has a control byte: %q", s.Desc)
 			}
-			if hasControlByte(s.Body) {
+			if hasControlByte(s.Body()) {
 				t.Errorf("body has a control byte for %q", s.Name)
 			}
 			if strings.TrimSpace(s.Name) == "" {

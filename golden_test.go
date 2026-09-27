@@ -50,7 +50,7 @@ func goldenModel(t *testing.T, w, h int) Model {
 	send(t, &m, terminalSize(w, h))
 	m.ready = true
 	m.loading = false
-	m.skills = makeSkills(20)
+	m.skills = makeSkills(t, 20)
 	m.skills[2].Category = "analysis"
 	m.skills[2].License = "MIT"
 	m.skills[2].Issues = []Issue{{Code: "test", Msg: "frontmatter name \"skill-03\" != dirname \"other\"", Sev: SevWarn}}

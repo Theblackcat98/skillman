@@ -7,20 +7,64 @@ import (
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"os"
+	"path/filepath"
 )
 
-func makeSkills(n int) []Skill {
-	out := make([]Skill, 0, n)
+func makeSkills(t *testing.T, n int) []Skill {
+	t.Helper()
+	root := t.TempDir()
 	for i := 1; i <= n; i++ {
-		out = append(out, Skill{
-			Name: fmt.Sprintf("skill-%02d", i),
-			Desc: fmt.Sprintf("Test skill number %02d", i),
-
-			Body: "body",
-			Dir:  "/nonexistent/" + fmt.Sprintf("skill-%02d", i),
-		})
+		name := fmt.Sprintf("skill-%02d", i)
+		d := filepath.Join(root, name)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		md := fmt.Sprintf("---\nname: %s\ndescription: Test skill number %02d\n---\n\nbody\n", name, i)
+		if err := os.WriteFile(filepath.Join(d, "SKILL.md"), []byte(md), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return out
+	list, err := ScanSkills(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != n {
+		t.Fatalf("built %d skills, want %d", len(list), n)
+	}
+	return list
+}
+
+// mkSkill writes a real SKILL.md and returns the skill that scans to it.
+// Bodies are read on demand now, so a test that fabricates a Skill without
+// a file is testing an empty preview.
+func mkSkill(t *testing.T, name, body string) Skill {
+	t.Helper()
+	dir := t.TempDir()
+	return mkSkillIn(t, dir, name, body)
+}
+
+func mkSkillIn(t *testing.T, root, name, body string) Skill {
+	t.Helper()
+	d := filepath.Join(root, name)
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "---\nname: " + name + "\ndescription: d\n---\n\n" + body + "\n"
+	if err := os.WriteFile(filepath.Join(d, "SKILL.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list, err := ScanSkills(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range list {
+		if s.Name == name {
+			return s
+		}
+	}
+	t.Fatalf("scanned %d skills, none named %s", len(list), name)
+	return Skill{}
 }
 
 // newTestModel builds a ready-to-render model at the given size.
@@ -36,7 +80,7 @@ func newTestModel(t *testing.T, width, height int, plain bool) Model {
 	send(t, &m, tea.WindowSizeMsg{Width: width, Height: height})
 	m.ready = true
 	m.loading = false
-	m.skills = makeSkills(20)
+	m.skills = makeSkills(t, 20)
 	m.applyFilter()
 	m.sizePanes()
 	return m
@@ -348,7 +392,7 @@ func TestWideCharacterRowsKeepFrame(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {50, 20}, {20, 10}} {
 		for _, plain := range []bool{false, true} {
 			m := newTestModel(t, size[0], size[1], plain)
-			m.skills = makeSkills(4)
+			m.skills = makeSkills(t, 4)
 			for i := range m.skills {
 				m.skills[i].Name = names[i]
 				m.skills[i].Category = "日本語"
@@ -432,13 +476,10 @@ func longBodyModel(t *testing.T, w, h int) Model {
 	for i := 1; i <= 120; i++ {
 		fmt.Fprintf(&body, "line %d of the long body\n", i)
 	}
-	m.skills = []Skill{{
-		Name:   "longbody",
-		Desc:   "A skill with a very long body for scroll tests",
-		Body:   body.String(),
-		Dir:    "/nonexistent/longbody",
-		Issues: []Issue{{Code: "test", Msg: "missing description", Sev: SevWarn}},
-	}}
+	long := mkSkill(t, "longbody", body.String())
+	long.Desc = "A skill with a very long body for scroll tests"
+	long.Issues = []Issue{{Code: "test", Msg: "missing description", Sev: SevWarn}}
+	m.skills = []Skill{long}
 	send(t, &m, tea.WindowSizeMsg{Width: w, Height: h})
 	m.loading = false
 	m.applyFilter()

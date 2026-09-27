@@ -122,8 +122,8 @@ func TestStressScan(t *testing.T) {
 			if hasControlByte(s.Desc) {
 				t.Fatalf("desc has a control byte: %q", s.Desc)
 			}
-			if hasControlByte(s.Body) {
-				t.Fatalf("body has a control byte: %q", s.Body)
+			if hasControlByte(s.Body()) {
+				t.Fatalf("body has a control byte: %q", s.Body())
 			}
 			badge := s.Badge()
 			if badge != "ok" && badge != "warn" && badge != "err" {

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,11 +45,12 @@ func (s Severity) String() string {
 // Issue codes. They are stable identifiers so a test or a script can key
 // on a problem without matching English text.
 const (
-	CodeFileMissing  = "file.missing"
-	CodeFMMalformed  = "frontmatter.malformed"
-	CodeNameMissing  = "name.missing"
-	CodeDescMissing  = "description.missing"
-	CodeNameMismatch = "name.mismatch"
+	CodeFileUnreadable = "file.unreadable"
+	CodeFileMissing    = "file.missing"
+	CodeFMMalformed    = "frontmatter.malformed"
+	CodeNameMissing    = "name.missing"
+	CodeDescMissing    = "description.missing"
+	CodeNameMismatch   = "name.mismatch"
 )
 
 // Issue is one problem with one skill. Msg is human text and is never
@@ -76,7 +78,13 @@ type Skill struct {
 	Size     int64
 	ModTime  time.Time
 	Issues   []Issue
-	Body     string
+
+	// path is the SKILL.md this skill was scanned from. The markdown body
+	// is deliberately not a field: a scan reads the frontmatter and stops,
+	// and Body() reads the rest on demand. Holding every body meant the
+	// list carried a copy of every skill's markdown whether or not the
+	// user had looked at one (review D2).
+	path string
 }
 
 type skillFM struct {
@@ -110,8 +118,16 @@ func ScanSkills(dir string) ([]Skill, error) {
 		// it needs the boundary treatment on its own.
 		s := Skill{Name: safeName(name), Dir: skillPath}
 		mdPath := filepath.Join(skillPath, "SKILL.md")
-		raw, err := os.ReadFile(mdPath)
-		if err != nil {
+		s.path = mdPath
+		fm, ferr := readFrontmatter(mdPath)
+		// Three different failures, and the scan must not merge them: a
+		// file that is not there, a file it cannot read, and a file whose
+		// YAML will not parse. The first two existed; the third is
+		// reported as its own code.
+		var parseErr frontmatterError
+		switch {
+		case ferr == nil:
+		case errors.Is(ferr, os.ErrNotExist):
 			s.Desc = "(no SKILL.md)"
 			s.Issues = []Issue{{
 				Code: CodeFileMissing,
@@ -120,20 +136,26 @@ func ScanSkills(dir string) ([]Skill, error) {
 			}}
 			out = append(out, s)
 			continue
-		}
-		fm, body, ferr := parseFrontmatter(string(raw))
-		s.Body = safeBody(body)
-		if ferr != nil {
+		case errors.As(ferr, &parseErr):
 			// A parse error is the whole story. The old code appended
 			// "missing name" and "missing description" on top of it,
 			// because the zero-valued frontmatter had empty fields, and
 			// so reported three problems for one broken file (review A6).
 			s.Issues = append(s.Issues, Issue{
 				Code: CodeFMMalformed,
-				Msg:  "invalid frontmatter: " + safeText(ferr.Error()),
+				Msg:  "invalid frontmatter: " + safeText(parseErr.Error()),
 				Sev:  SevErr,
 			})
 			s.Desc = "(unreadable frontmatter)"
+			out = append(out, s)
+			continue
+		default:
+			s.Desc = "(unreadable SKILL.md)"
+			s.Issues = []Issue{{
+				Code: CodeFileUnreadable,
+				Msg:  "unreadable SKILL.md: " + safeText(ferr.Error()),
+				Sev:  SevErr,
+			}}
 			out = append(out, s)
 			continue
 		}
@@ -178,12 +200,13 @@ func ScanSkills(dir string) ([]Skill, error) {
 	return out, nil
 }
 
-func parseFrontmatter(raw string) (skillFM, string, error) {
-	var fm skillFM
+// splitFrontmatter separates the YAML head from the body. closed is false
+// when the opening --- has no partner, which on a truncated prefix read
+// means the frontmatter is longer than what was read.
+func splitFrontmatter(raw string) (head, body string, closed, hasFM bool) {
 	if !strings.HasPrefix(raw, "---") {
-		return fm, raw, nil
+		return "", raw, false, false
 	}
-	// Find closing --- on its own line.
 	lines := strings.Split(raw, "\n")
 	end := -1
 	for i := 1; i < len(lines); i++ {
@@ -193,13 +216,115 @@ func parseFrontmatter(raw string) (skillFM, string, error) {
 		}
 	}
 	if end < 0 {
+		return "", raw, false, true
+	}
+	return strings.Join(lines[1:end], "\n"), strings.Join(lines[end+1:], "\n"), true, true
+}
+
+func parseFrontmatter(raw string) (skillFM, string, error) {
+	var fm skillFM
+	head, body, closed, hasFM := splitFrontmatter(raw)
+	if !hasFM {
+		return fm, raw, nil
+	}
+	if !closed {
 		return fm, raw, errors.New("unterminated frontmatter (missing closing ---)")
 	}
-	head := strings.Join(lines[1:end], "\n")
 	if err := yaml.Unmarshal([]byte(head), &fm); err != nil {
-		return fm, strings.Join(lines[end+1:], "\n"), err
+		return fm, body, err
 	}
-	return fm, strings.Join(lines[end+1:], "\n"), nil
+	return fm, body, nil
+}
+
+// frontmatterError marks a YAML failure as opposed to an I/O failure, so
+// the scan can report a broken file differently from an unreadable one.
+type frontmatterError struct{ err error }
+
+func (e frontmatterError) Error() string { return e.err.Error() }
+func (e frontmatterError) Unwrap() error { return e.err }
+
+// frontmatterLimit bounds how much of a SKILL.md a scan reads. A
+// frontmatter is a handful of lines; past this limit the bytes are body.
+const frontmatterLimit = 32 << 10
+
+// readFrontmatter reads and parses just the frontmatter of a SKILL.md.
+//
+// The scan used to read every byte of every file and keep the body in the
+// model. That cost memory the list never needed — about 20 MB for 200
+// skills of 100 KB, before the render cache holds its own copy — and it
+// delayed the first frame behind every body in the directory.
+func readFrontmatter(path string) (skillFM, error) {
+	raw, truncated, err := readPrefix(path, frontmatterLimit)
+	if err != nil {
+		return skillFM{}, err
+	}
+	head, _, closed, hasFM := splitFrontmatter(raw)
+	if hasFM && closed {
+		var fm skillFM
+		if err := yaml.Unmarshal([]byte(head), &fm); err != nil {
+			return fm, frontmatterError{err}
+		}
+		return fm, nil
+	}
+	if !truncated {
+		// The whole file was read and it has no usable frontmatter.
+		return skillFM{}, nil
+	}
+	// The frontmatter runs past the limit. That is pathological, so pay
+	// for the full read and decide honestly rather than reporting a file
+	// as broken when it is merely unusual.
+	full, err := os.ReadFile(path)
+	if err != nil {
+		return skillFM{}, err
+	}
+	fm, _, err := parseFrontmatter(string(full))
+	if err != nil {
+		return fm, frontmatterError{err}
+	}
+	return fm, nil
+}
+
+// readPrefix reads at most limit bytes, and reports whether there was
+// more to read.
+func readPrefix(path string, limit int) (string, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false, err
+	}
+	defer f.Close()
+	// One byte past the limit, so a file that ends exactly at the limit
+	// is not mistaken for a truncated one.
+	buf := make([]byte, limit+1)
+	n, rerr := io.ReadFull(f, buf)
+	if rerr != nil && rerr != io.EOF && rerr != io.ErrUnexpectedEOF {
+		return "", false, rerr
+	}
+	if n > limit {
+		return string(buf[:limit]), true, nil
+	}
+	return string(buf[:n]), false, nil
+}
+
+// Body returns the skill's markdown, read and sanitized on demand. It is
+// the only way to get the body and a scan never calls it.
+func (s Skill) Body() string {
+	if s.path == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(s.path)
+	if err != nil {
+		return ""
+	}
+	_, body, perr := parseFrontmatter(string(raw))
+	if perr != nil {
+		// The scan already reported this as an issue, and the preview
+		// falls back to the issue list.
+		return ""
+	}
+	// The banner already ends in a blank line, and a real SKILL.md starts
+	// with one after its frontmatter, so an untrimmed body put a double
+	// blank line between the description and the first heading.
+	return safeBody(strings.TrimLeft(body, "\n"))
 }
 
 func firstLine(s string) string {
@@ -345,18 +470,19 @@ func (s Skill) renderPreviewStyled(width int) string {
 // renderPreviewWith renders with a caller-supplied shared glamour renderer
 // (fast path for the TUI). Falls back to raw text when plain or r is nil.
 func (s Skill) renderPreviewWith(r *glamour.TermRenderer, plain bool) string {
-	if s.Body == "" {
+	body := s.Body()
+	if body == "" {
 		if len(s.Issues) > 0 {
 			return "Issues:\n- " + strings.Join(s.issueTexts(), "\n- ") + "\n"
 		}
 		return "(empty SKILL.md)"
 	}
 	if plain || r == nil {
-		return s.Body
+		return body
 	}
-	out, err := r.Render(s.Body)
+	out, err := r.Render(body)
 	if err != nil {
-		return s.Body
+		return body
 	}
 	return out
 }

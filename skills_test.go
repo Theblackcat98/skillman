@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -329,9 +331,151 @@ func TestScanFailureKeepsTheListAndSaysSo(t *testing.T) {
 	}
 
 	// A later good scan clears the error.
-	mm, _ = m.Update(skillsLoadedMsg{skills: makeSkills(3)})
+	mm, _ = m.Update(skillsLoadedMsg{skills: makeSkills(t, 3)})
 	m = mm.(Model)
 	if m.errMsg != "" {
 		t.Errorf("errMsg = %q after a good scan, want it cleared", m.errMsg)
+	}
+}
+
+// A scan must not keep the body. It used to read every byte of every
+// SKILL.md and store it on the Skill, so the list held a copy of every
+// skill's markdown whether or not the user had looked at one — about
+// 20 MB for 200 skills of 100 KB, doubled by the render cache
+// (review D2).
+func TestScanDoesNotRetainTheBody(t *testing.T) {
+	typ := reflect.TypeOf(Skill{})
+	for i := 0; i < typ.NumField(); i++ {
+		if typ.Field(i).Name == "Body" {
+			t.Error("Skill has a Body field again; a scan will retain every body")
+		}
+	}
+
+	dir := t.TempDir()
+	// A body far larger than any real skill, to make the cost concrete.
+	big := strings.TrimRight(strings.Repeat("filler line for the body\n", 120_000), "\n")
+	writeSkill(t, dir, "big", "---\nname: big\ndescription: huge\n---\n\n"+big)
+
+	list, err := ScanSkills(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("scanned %d skills, want 1", len(list))
+	}
+	s := list[0]
+	if s.Desc != "huge" {
+		t.Errorf("the frontmatter was not read: Desc = %q", s.Desc)
+	}
+	// The body is still reachable, and it is the whole thing.
+	body := s.Body()
+	if len(body) != len(big) {
+		t.Errorf("Body() returned %d bytes, want %d", len(body), len(big))
+	}
+	if !strings.HasPrefix(body, "filler line") {
+		t.Errorf("Body() starts %q", body[:min(40, len(body))])
+	}
+}
+
+// Lazy means lazy: a body written after the scan must be visible, because
+// nothing captured a copy at scan time.
+func TestBodyIsReadOnDemand(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "later", "---\nname: later\ndescription: d\n---\n\noriginal body\n")
+	list, err := ScanSkills(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := list[0]
+	if !strings.Contains(s.Body(), "original body") {
+		t.Fatalf("setup: body = %q", s.Body())
+	}
+
+	// Rewrite the file without rescanning.
+	writeSkill(t, dir, "later", "---\nname: later\ndescription: d\n---\n\nreplacement body\n")
+	if got := s.Body(); !strings.Contains(got, "replacement body") {
+		t.Errorf("Body() = %q, want the file as it is now, not as it was at scan time", got)
+	}
+}
+
+// A frontmatter longer than the scan limit is pathological, so the read
+// falls back to the whole file rather than reporting a working skill as
+// broken.
+func TestFrontmatterLargerThanTheScanLimitStillParses(t *testing.T) {
+	dir := t.TempDir()
+	// Frontmatter only becomes longer than 32 KB with a huge metadata map.
+	var b strings.Builder
+	b.WriteString("---\nname: huge-fm\ndescription: d\nmetadata:\n")
+	for i := 0; i < 4000; i++ {
+		b.WriteString("  k")
+		b.WriteString(strconv.Itoa(i))
+		b.WriteString(": v\n")
+	}
+	b.WriteString("---\n\nbody\n")
+	writeSkill(t, dir, "huge-fm", b.String())
+
+	list, err := ScanSkills(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("scanned %d", len(list))
+	}
+	s := list[0]
+	if len(s.Issues) != 0 {
+		t.Errorf("a %d byte frontmatter was reported as broken: %v", len(b.String()), s.issueTexts())
+	}
+	if s.Name != "huge-fm" {
+		t.Errorf("name = %q", s.Name)
+	}
+	if !strings.Contains(s.Body(), "body") {
+		t.Errorf("body = %q", s.Body())
+	}
+}
+
+// Three failures, three codes. Conflating them was a bug: a parse failure
+// used to be reported as an unreadable file, which sends the reader
+// looking at permissions instead of at the YAML.
+func TestScanFailuresStayDistinct(t *testing.T) {
+	dir := t.TempDir()
+	// Malformed YAML.
+	badFM := filepath.Join(dir, "badfm")
+	if err := os.MkdirAll(badFM, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badFM, "SKILL.md"),
+		[]byte("---\nname: [unclosed\ndescription: d\n---\n\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// No SKILL.md.
+	if err := os.MkdirAll(filepath.Join(dir, "gone"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A SKILL.md that is a directory: the open succeeds and the read does
+	// not, which is an I/O failure rather than a parse failure.
+	if err := os.MkdirAll(filepath.Join(dir, "isdir", "SKILL.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := ScanSkills(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]Skill{}
+	for _, s := range list {
+		byName[s.Name] = s
+	}
+	if got := byName["badfm"].Issues; len(got) != 1 || got[0].Code != CodeFMMalformed {
+		t.Errorf("malformed YAML issues = %v, want one %s", byName["badfm"].issueTexts(), CodeFMMalformed)
+	}
+	if got := byName["gone"].Issues; len(got) != 1 || got[0].Code != CodeFileMissing {
+		t.Errorf("missing file issues = %v, want one %s", byName["gone"].issueTexts(), CodeFileMissing)
+	}
+	if got := byName["isdir"].Issues; len(got) != 1 || got[0].Code != CodeFileUnreadable {
+		t.Errorf("unreadable file issues = %v, want one %s", byName["isdir"].issueTexts(), CodeFileUnreadable)
+	}
+	// All three are errors, so a directory with any of them exits 2.
+	if got := ValidateExitCode(list); got != 2 {
+		t.Errorf("exit code = %d, want 2", got)
 	}
 }

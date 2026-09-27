@@ -559,7 +559,7 @@ func TestSkillsLoadedReplacesTheList(t *testing.T) {
 	m := newTestModel(t, 80, 24, true)
 	m.selectAt(5)
 	// A reload with a different set must move the list, not append to it.
-	send(t, &m, skillsLoadedMsg{skills: makeSkills(3)})
+	send(t, &m, skillsLoadedMsg{skills: makeSkills(t, 3)})
 	if len(m.skills) != 3 {
 		t.Errorf("reload left %d skills, want 3", len(m.skills))
 	}
@@ -669,9 +669,9 @@ func TestEscOrder(t *testing.T) {
 // outgoing skill's body (review A10).
 func TestCursorMovePreservesPerSkillScroll(t *testing.T) {
 	m := longBodyModel(t, 80, 24)
-	m.skills = append(m.skills, Skill{
-		Name: "other", Desc: "another", Body: "short body", Dir: "/nonexistent/other",
-	})
+	other := mkSkill(t, "other", "short body")
+	other.Desc = "another"
+	m.skills = append(m.skills, other)
 	m.applyFilter()
 
 	send(t, &m, tea.KeyMsg{Type: tea.KeyTab}) // focus preview
@@ -805,10 +805,7 @@ func fixtureSkills(t *testing.T, n int) []Skill {
 func TestPreviewCacheIsBounded(t *testing.T) {
 	m := longBodyModel(t, 80, 24)
 	for i := 0; i < previewCacheLimit*3; i++ {
-		s := Skill{
-			Name: "gen-" + itoaTest(i), Desc: "d",
-			Body: "line\nline\nline\n", Dir: "/nonexistent",
-		}
+		s := mkSkill(t, "gen-"+itoaTest(i), "line\nline\nline")
 		m.cachedPreview(s, 40)
 	}
 	if len(m.previewCache) > previewCacheLimit {

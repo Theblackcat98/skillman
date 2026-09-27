@@ -104,7 +104,7 @@ func TestScanSanitizesEveryDisplayField(t *testing.T) {
 		"License":  s.License,
 		"Compat":   s.Compat,
 		"Category": s.Category,
-		"Body":     s.Body,
+		"Body":     s.Body(),
 	}
 	for i, is := range s.Issues {
 		fields["Issue["+itoaTest(i)+"]"] = is.Msg
@@ -119,12 +119,12 @@ func TestScanSanitizesEveryDisplayField(t *testing.T) {
 		t.Errorf("Name = %q, want the tab shown as \\x09", s.Name)
 	}
 	// The body keeps its newlines: it is markdown.
-	if strings.Count(s.Body, "\n") < 3 {
-		t.Errorf("Body lost its line structure: %q", s.Body)
+	if strings.Count(s.Body(), "\n") < 3 {
+		t.Errorf("Body lost its line structure: %q", s.Body())
 	}
 	// And the escape is still legible for debugging.
-	if !strings.Contains(s.Body, `\x1b[2J`) {
-		t.Errorf("Body = %q, want the escape shown as \\x1b[2J", s.Body)
+	if !strings.Contains(s.Body(), `\x1b[2J`) {
+		t.Errorf("Body = %q, want the escape shown as \\x1b[2J", s.Body())
 	}
 }
 

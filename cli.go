@@ -145,7 +145,7 @@ func runView(name string, plain bool) int {
 				}
 				fmt.Println()
 			}
-			body := s.Body
+			body := s.Body()
 			if !plain {
 				// Glamour picks "no style" when stdout is not a terminal,
 				// so an explicit SKILLMAN_COLOR=always has to name a

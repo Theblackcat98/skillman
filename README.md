@@ -254,6 +254,27 @@ stable `Code` and a `Severity`. The badge, the row colour, the
 message can never change an exit code. A malformed frontmatter is one
 error, not three warnings about a file nothing can read.
 
+| Code | Meaning |
+|---|---|
+| `file.missing` | no `SKILL.md` in the directory |
+| `file.unreadable` | `SKILL.md` exists but cannot be read |
+| `frontmatter.malformed` | the YAML will not parse |
+| `name.missing` | no `name` in the frontmatter |
+| `name.mismatch` | the frontmatter `name` is not the directory name |
+| `description.missing` | no `description` in the frontmatter |
+
+The three file codes stay separate on purpose: a missing file, a file
+with bad permissions and a file whose YAML is broken send the reader to
+three different places.
+
+**Bodies are read on demand.** A scan reads the frontmatter of each
+`SKILL.md` and stops; the markdown is read when a skill is previewed or
+printed. Holding every body made the list carry a copy of every skill
+the user had, whether or not they had looked at one, and delayed the
+first frame behind every body in the directory. A frontmatter longer
+than 32 KB — pathological, but possible — falls back to reading the
+whole file rather than reporting a working skill as broken.
+
 **The selection is a name.** Nothing stores a row index. A reload, a
 filter change or a delete reshuffles the list, and an index then points at
 a different skill while the highlighted row stays exactly where it was. A
@@ -446,7 +467,7 @@ to findings in [docs/review-2026-09-27.md](docs/review-2026-09-27.md).
 | 7 · CLI surface | planned | `list --long`, `--json` accepted or rejected everywhere, one load helper. |
 | 8 · Config, state, keymap | done | Landed as plan phases 11 and 12. |
 | 9 · Docs | planned | README (done), man page, parity test, stale-reference cleanup. |
-| 10 · Memory and scale | in progress | Preview cache bounded at 24 renders (landed with the safety net). Bodies load lazily, next. |
+| 10 · Memory and scale | done | The preview render cache is bounded at 24 entries, and a scan reads only the frontmatter of each `SKILL.md` — the body is loaded when a skill is previewed or printed. |
 | 11 · Install from GitHub | planned | Landed as plan phase 5, once the reload path it depends on exists. |
 
 ## Out of scope

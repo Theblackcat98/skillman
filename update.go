@@ -395,10 +395,9 @@ func (m *Model) doCreateAndEdit() tea.Cmd {
 		return m.doEdit()
 	}
 	m.appMode = modeNormal
-	sk := *sel
-	sk.Body = fmt.Sprintf(skillTemplate, name, name)
-	sk.Desc = "one line, say what this skill is for"
-	sk.Issues = nil
+	// The old code built a Skill here with the template body, a
+	// description and no issues, and then never used it. The reload that
+	// follows the editor re-reads the file, so the real values win.
 	cmds := []tea.Cmd{
 		toastCmd("created "+name+"/SKILL.md", false),
 		tea.ExecProcess(editorCmd(path), func(eerr error) tea.Msg {

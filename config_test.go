@@ -195,7 +195,7 @@ func TestMissingStateIsFine(t *testing.T) {
 // Per-skill scroll must survive a cursor move and come back intact.
 func TestPreviewScrollIsPerSkill(t *testing.T) {
 	m := longBodyModel(t, 80, 24)
-	m.skills = append(m.skills, Skill{Name: "other", Body: "short body", Dir: "/nonexistent/other"})
+	m.skills = append(m.skills, mkSkill(t, "other", "short body"))
 	m.applyFilter()
 
 	send(t, &m, tea.KeyMsg{Type: tea.KeyTab}) // focus preview
