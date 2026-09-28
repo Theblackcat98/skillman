@@ -307,16 +307,6 @@ func (m *Model) applyFilter() {
 	m.refreshPreview()
 }
 
-// nameVisible reports whether the selection is in the current filter.
-func (m *Model) nameVisible() bool {
-	for i := range m.filtered {
-		if m.filtered[i].Name == m.selName {
-			return true
-		}
-	}
-	return false
-}
-
 // nameExists reports whether the selection is still a skill on disk,
 // whether or not the current filter shows it.
 func (m *Model) nameExists() bool {
