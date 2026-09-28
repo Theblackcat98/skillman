@@ -20,6 +20,14 @@ SkillMan: a delete moves the directory to a trash you can restore from.
  / filter · : cmd · e edit · d del · u undo · ? help · q quit    │
 ```
 
+## Screenshots
+
+These are real captures of SkillMan running against isolated demo skills; `broken` is deliberately invalid so the warning badge is visible.
+
+![SkillMan browsing skills with validation badges and a rendered Markdown preview](docs/images/skillman-tui.png)
+
+![SkillMan keyboard-help overlay](docs/images/skillman-help.png)
+
 ## Quickstart
 
 ```sh
