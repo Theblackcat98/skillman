@@ -311,8 +311,7 @@ func TestPreviewFocusRoutesNavToViewport(t *testing.T) {
 
 func TestUndoWithoutPendingDelete(t *testing.T) {
 	m := newTestModel(t, 80, 24, true)
-	mm, cmd := m.Update(keyPress('u'))
-	m = mm.(Model)
+	_, cmd := m.Update(keyPress('u'))
 	if cmd == nil {
 		t.Fatal("u with nothing pending returned no command")
 	}
@@ -953,7 +952,9 @@ func TestFilterDoesNotLoseTheSelection(t *testing.T) {
 // result directly, so returning the original let any later change write
 // through to the full list (review F6).
 func TestFilterSkillsNeverAliasesItsInput(t *testing.T) {
-	in := []Skill{{Name: "a", Desc: "one"}, {Name: "b", Desc: "two"}}
+	in := make([]Skill, 2, 3)
+	in[0] = Skill{Name: "a", Desc: "one"}
+	in[1] = Skill{Name: "b", Desc: "two"}
 	out := FilterSkills(in, "")
 	if &out[0] == &in[0] {
 		t.Fatal("FilterSkills returned the caller's own slice")
@@ -964,8 +965,11 @@ func TestFilterSkillsNeverAliasesItsInput(t *testing.T) {
 	}
 	// Appending must not grow into the caller's array either.
 	out = append(out, Skill{Name: "c"})
-	if len(in) != 2 {
-		t.Errorf("appending to the result changed the input length to %d", len(in))
+	if len(out) != 3 {
+		t.Fatalf("append result length = %d, want 3", len(out))
+	}
+	if got := in[:cap(in)][2].Name; got != "" {
+		t.Errorf("appending to the result wrote into the input backing array: %q", got)
 	}
 	// And a real filter result is independent too.
 	out = FilterSkills(in, "a")
